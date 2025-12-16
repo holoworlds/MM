@@ -17,8 +17,8 @@ const getBasePrice = (symbol: string): number => {
 };
 
 // --- REAL API UTILS ---
-// UPDATED HOST: LongPort is the new platform
-const LB_API_HOST = "https://openapi.longportapp.com"; 
+// UPDATED HOST: Use Global endpoint as suggested
+const LB_API_HOST = "https://openapi.longbridge.global"; 
 
 // Helper: Ensure US symbols have .US suffix
 const normalizeSymbol = (symbol: string): string => {
@@ -78,11 +78,23 @@ async function fetchQuoteReal(symbolRaw: string, token: string, appKey?: string)
         }
 
         // Extract price
-        const quoteList = data.data?.quote || data.data?.list;
-        const targetItem = Array.isArray(quoteList) ? quoteList[0] : data.data;
+        // Logic simplified to handle standard V2 response structure more gracefully
+        // Expected: data: { quote: [ { last_done: ... } ] } OR data: { last_done: ... }
+        
+        let targetItem = null;
+        
+        if (data.data) {
+            if (Array.isArray(data.data.quote)) {
+                targetItem = data.data.quote[0];
+            } else if (Array.isArray(data.data.list)) {
+                targetItem = data.data.list[0];
+            } else if (data.data.last_done !== undefined || data.data.current_price !== undefined || data.data.close !== undefined) {
+                targetItem = data.data;
+            }
+        }
 
         if (targetItem) {
-             const price = targetItem.last_done || targetItem.current_price || targetItem.close;
+             const price = targetItem.last_done ?? targetItem.current_price ?? targetItem.close;
              if (typeof price === 'number') return price;
         }
         
@@ -168,7 +180,7 @@ export class LongbridgeRealtimePoller {
     }
 
     public async connect() {
-        console.log(`[LB Poller] Starting REALTIME connection for ${this.symbol}...`);
+        console.log(`[LB Poller] Starting REALTIME connection for ${this.symbol} to ${LB_API_HOST}...`);
         
         // Initial fetch
         const price = await fetchQuoteReal(this.symbol, this.accessToken, this.appKey);

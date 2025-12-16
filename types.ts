@@ -97,7 +97,7 @@ export interface StrategyConfig {
 
   // --- SIGNALS ---
 
-  // 1. MACD (Moved Up)
+  // 1. MACD
   useMACD: boolean;
   macdFast: number;
   macdSlow: number;
@@ -107,9 +107,9 @@ export interface StrategyConfig {
   macdExitLong: boolean;
   macdExitShort: boolean;
 
-  // 2. Price Return to EMA7 (Moved Up)
+  // 2. Price Return to EMA7
   usePriceReturnEMA7: boolean;
-  priceReturnDist: number; // Percentage distance allowed (e.g., 0.1%)
+  priceReturnDist: number;
 
   // 3. EMA 7/25
   useEMA7_25: boolean;
@@ -134,8 +134,8 @@ export interface StrategyConfig {
 
   // 6. EMA Double (7 & 25 vs 99)
   useEMADouble: boolean; 
-  emaDoubleLong: boolean; // 7>99 && 25>99
-  emaDoubleShort: boolean; // 7<99 && 25<99
+  emaDoubleLong: boolean;
+  emaDoubleShort: boolean;
   emaDoubleExitLong: boolean;
   emaDoubleExitShort: boolean;
 
