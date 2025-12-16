@@ -1,5 +1,24 @@
 
 import { Candle, IntervalType, SymbolType, LongbridgeConfig } from "../types";
+import { createRequire } from 'module';
+
+// Robustly load longport SDK (Handles cases where package is missing or CJS/ESM mismatch)
+const require = createRequire(import.meta.url);
+
+let Config: any;
+let QuoteContext: any;
+let SubType: any;
+let isSdkLoaded = false;
+
+try {
+    const lp = require('longport');
+    Config = lp.Config;
+    QuoteContext = lp.QuoteContext;
+    SubType = lp.SubType;
+    isSdkLoaded = true;
+} catch (e) {
+    console.warn("[LongbridgeService] 'longport' package not found or failed to load. Realtime features will fall back to mock data.");
+}
 
 // --- Realistic Mock Configuration ---
 const MOCK_BASE_PRICES: Record<string, number> = {
@@ -17,91 +36,70 @@ const getBasePrice = (symbol: string): number => {
 };
 
 // --- REAL API UTILS ---
-// UPDATED HOST: Use Global endpoint as suggested
-const LB_API_HOST = "https://openapi.longbridge.global"; 
+const LB_API_HOST = "https://openapi.longportapp.com"; 
 
 // Helper: Ensure US symbols have .US suffix
 const normalizeSymbol = (symbol: string): string => {
     if (!symbol) return '';
     const s = symbol.toUpperCase();
     
-    // Safety check: if symbol is extremely short (likely polling artifact), ignore it or return as is to fail gracefully
     if (s.length < 2) return s;
-
-    // Check if it already has a dot suffix (e.g. .US, .HK)
-    if (s.includes('.')) {
-        return s;
-    }
-
-    // Heuristic: 1-5 letters usually US stock
-    if (/^[A-Z]{1,5}$/.test(s)) {
-        return `${s}.US`;
-    }
+    if (s.includes('.')) return s;
+    if (/^[A-Z]{1,5}$/.test(s)) return `${s}.US`;
     
     return s;
 }
 
+// Fetch Quote via HTTP Snapshot (Pull Mode) - Used for History alignment only
 async function fetchQuoteReal(symbolRaw: string, token: string, appKey?: string): Promise<number | null> {
     const symbol = normalizeSymbol(symbolRaw);
     try {
         const headers: Record<string, string> = {
-            'Authorization': `Bearer ${token}`,
+            'Authorization': token.startsWith('Bearer ') ? token : `Bearer ${token}`,
             'Content-Type': 'application/json',
             'Accept': 'application/json' 
         };
         
-        if (appKey) {
-            headers['x-api-key'] = appKey;
-        }
-
-        // Endpoint: /v1/quote/quote
         const url = `${LB_API_HOST}/v1/quote/quote?symbol=${symbol}`;
-        
         const response = await fetch(url, { headers });
 
         if (!response.ok) {
-            const errorText = await response.text();
-            // Don't log 404s for common polling artifacts if possible, but do log real errors
-            if (response.status !== 404) {
-                 console.error(`[LB API Error] ${symbol} Status: ${response.status}`, errorText);
-            } else {
-                 console.warn(`[LB API 404] Symbol not found or API path invalid for: ${symbol} (${url})`);
-            }
-            throw new Error(`LB API Error: ${response.status}`);
+            const errorBody = await response.text();
+            console.error(`[LB API DEBUG] HTTP ${response.status} for ${symbol}. Response:`, errorBody);
+            return null;
         }
 
         const data = await response.json();
         
         if (data.code !== 0) {
-            console.error(`[LB API Business Error] Code: ${data.code}, Msg: ${data.message}`);
-            return null;
+             console.error(`[LB API DEBUG] Business Error Code ${data.code}: ${data.message}`);
+             return null;
         }
 
-        // Extract price
-        // Logic simplified to handle standard V2 response structure more gracefully
-        // Expected: data: { quote: [ { last_done: ... } ] } OR data: { last_done: ... }
-        
         let targetItem = null;
-        
         if (data.data) {
-            if (Array.isArray(data.data.quote)) {
-                targetItem = data.data.quote[0];
-            } else if (Array.isArray(data.data.list)) {
+             // Priority 1: secu_quote
+             if (Array.isArray(data.data.secu_quote) && data.data.secu_quote.length > 0) {
+                 targetItem = data.data.secu_quote[0];
+             } 
+             // Priority 2: list
+             else if (Array.isArray(data.data.list) && data.data.list.length > 0) {
                 targetItem = data.data.list[0];
-            } else if (data.data.last_done !== undefined || data.data.current_price !== undefined || data.data.close !== undefined) {
-                targetItem = data.data;
+            } 
+            // Priority 3: quote
+            else if (Array.isArray(data.data.quote) && data.data.quote.length > 0) {
+                targetItem = data.data.quote[0];
             }
         }
 
         if (targetItem) {
-             const price = targetItem.last_done ?? targetItem.current_price ?? targetItem.close;
-             if (typeof price === 'number') return price;
+             const price = parseFloat(targetItem.last_done || targetItem.current_price || targetItem.close);
+             if (!isNaN(price)) return price;
         }
         
-        console.warn(`[LB API] Could not extract price for ${symbol}. Data:`, JSON.stringify(data));
         return null;
-
     } catch (e) {
+        console.error(`[LB API DEBUG] Network/Parse Error for ${symbol}:`, e);
         return null;
     }
 }
@@ -116,7 +114,7 @@ export const fetchHistoricalCandlesLB = async (
     
     let endPrice = getBasePrice(symbol);
     
-    // Attempt to align history with real current price
+    // Attempt to align history with real current price using HTTP snapshot
     if (config?.enableRealtime && config?.accessToken) {
         const realPrice = await fetchQuoteReal(symbol, config.accessToken, config.appKey);
         if (realPrice) {
@@ -160,98 +158,133 @@ export const fetchHistoricalCandlesLB = async (
     return candles.reverse();
 };
 
-// --- REALTIME POLLER ---
+// --- REALTIME POLLER (SDK Based) ---
 export class LongbridgeRealtimePoller {
     private symbol: string;
+    private appKey: string;
+    private appSecret: string;
     private accessToken: string;
-    private appKey?: string;
     private callback: (candle: Candle) => void;
-    private intervalId: ReturnType<typeof setInterval> | null = null;
+    
+    private ctx: any = null; // Use any to avoid TS errors if SDK is missing
+    private mockInterval: ReturnType<typeof setInterval> | null = null;
     
     private currentCandle: Candle | null = null;
     private lastPrice: number = 0;
-    private consecutiveErrors: number = 0;
 
-    constructor(symbol: string, accessToken: string, callback: (candle: Candle) => void, appKey?: string) {
+    constructor(symbol: string, accessToken: string, callback: (candle: Candle) => void, appKey: string, appSecret?: string) {
         this.symbol = symbol;
         this.accessToken = accessToken;
-        this.appKey = appKey;
         this.callback = callback;
+        this.appKey = appKey; 
+        this.appSecret = appSecret || '';
     }
 
     public async connect() {
-        console.log(`[LB Poller] Starting REALTIME connection for ${this.symbol} to ${LB_API_HOST}...`);
-        
-        // Initial fetch
-        const price = await fetchQuoteReal(this.symbol, this.accessToken, this.appKey);
-        if (price) {
-            console.log(`[LB Poller] Connected! Initial Price: ${price}`);
-            this.lastPrice = price;
-            this.consecutiveErrors = 0;
-        } else {
-            console.warn(`[LB Poller] Initial fetch failed for ${this.symbol}. Check credentials/network.`);
-            this.lastPrice = getBasePrice(this.symbol);
+        if (!isSdkLoaded || !Config || !QuoteContext) {
+            console.log(`[LB SDK] SDK module not available. Starting mock fallback for ${this.symbol}.`);
+            this.startMockFallback();
+            return;
         }
 
-        this.intervalId = setInterval(async () => {
-            const now = Date.now();
-            const timeSlot = Math.floor(now / 60000) * 60000;
+        console.log(`[LB SDK] Initializing SDK for ${this.symbol}...`);
+        
+        try {
+            // Configure SDK
+            const config = new Config({
+                appKey: this.appKey,
+                appSecret: this.appSecret,
+                accessToken: this.accessToken,
+                enablePrintQuotePackages: false
+            });
 
-            const realPrice = await fetchQuoteReal(this.symbol, this.accessToken, this.appKey);
+            this.ctx = new QuoteContext(config);
+
+            // Handle Quote Updates
+            this.ctx.setOnQuote((symbol: any, quote: any) => {
+                if (symbol !== this.symbol) return;
+                
+                // Quote data usually has last_done, open, high, low, volume
+                const q: any = quote;
+                const price = parseFloat(q.lastDone || q.last_done);
+                
+                if (!isNaN(price)) {
+                    this.updateCandle(price, q.volume ? parseInt(q.volume) : 0);
+                }
+            });
+
+            // Subscribe
+            await this.ctx.subscribe([this.symbol], [SubType.Quote], true);
+            console.log(`[LB SDK] Subscribed to ${this.symbol} successfully.`);
+
+        } catch (error) {
+            console.error(`[LB SDK] Connection failed for ${this.symbol}. Falling back to Mock.`, error);
+            this.startMockFallback();
+        }
+    }
+
+    private updateCandle(price: number, volumeTick: number = 0) {
+        const now = Date.now();
+        const timeSlot = Math.floor(now / 60000) * 60000;
+
+        if (!this.currentCandle || this.currentCandle.time !== timeSlot) {
+            // Close previous
+            if (this.currentCandle) {
+                this.currentCandle.isClosed = true;
+                this.callback(this.currentCandle);
+            }
+            // Open new
+            this.currentCandle = {
+                symbol: this.symbol,
+                time: timeSlot,
+                open: price,
+                high: price,
+                low: price,
+                close: price,
+                volume: volumeTick,
+                isClosed: false
+            };
+        } else {
+            // Update current
+            this.currentCandle.close = price;
+            this.currentCandle.high = Math.max(this.currentCandle.high, price);
+            this.currentCandle.low = Math.min(this.currentCandle.low, price);
+        }
+
+        this.callback(this.currentCandle);
+        this.lastPrice = price;
+    }
+
+    private startMockFallback() {
+        if (this.mockInterval) return;
+        
+        console.log(`[LB Mock] Starting fallback simulation for ${this.symbol}`);
+        this.lastPrice = getBasePrice(this.symbol);
+
+        this.mockInterval = setInterval(() => {
+            const volatility = this.lastPrice * 0.0005; 
+            const change = (Math.random() - 0.5) * volatility * 2;
+            const newPrice = this.lastPrice + change;
             
-            let currentP = this.lastPrice;
-
-            if (realPrice) {
-                currentP = realPrice;
-                this.lastPrice = realPrice;
-                this.consecutiveErrors = 0;
-            } else {
-                this.consecutiveErrors++;
-                if (this.consecutiveErrors > 10) {
-                   if (this.consecutiveErrors % 20 === 0) console.warn(`[LB Poller] Persistent API failure for ${this.symbol} (${this.consecutiveErrors}x)`);
-                }
-                currentP = this.lastPrice; 
-            }
-
-            // Construct/Update Candle
-            if (!this.currentCandle || this.currentCandle.time !== timeSlot) {
-                // Close previous
-                if (this.currentCandle) {
-                     this.currentCandle.isClosed = true;
-                     this.callback(this.currentCandle);
-                }
-                // Open new
-                this.currentCandle = {
-                    symbol: this.symbol,
-                    time: timeSlot,
-                    open: currentP,
-                    high: currentP,
-                    low: currentP,
-                    close: currentP,
-                    volume: 0,
-                    isClosed: false
-                };
-            } else {
-                // Update current
-                this.currentCandle.close = currentP;
-                this.currentCandle.high = Math.max(this.currentCandle.high, currentP);
-                this.currentCandle.low = Math.min(this.currentCandle.low, currentP);
-                this.currentCandle.volume += 10;
-            }
-
-            this.callback(this.currentCandle);
-
-        }, 1000); 
+            this.updateCandle(newPrice, Math.floor(Math.random() * 50));
+        }, 1000);
     }
 
     public terminate() {
-        if (this.intervalId) {
-            clearInterval(this.intervalId);
-            this.intervalId = null;
+        if (this.ctx) {
+            try {
+                // this.ctx.unsubscribe([this.symbol], ['Quote']);
+            } catch(e) {}
+            this.ctx = null;
+        }
+        if (this.mockInterval) {
+            clearInterval(this.mockInterval);
+            this.mockInterval = null;
         }
     }
 }
 
+// Keeping Mock Class for consistency if used elsewhere
 export class LongbridgeSocketMock {
     private symbol: string;
     private interval: ReturnType<typeof setInterval> | null = null;

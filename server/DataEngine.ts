@@ -72,9 +72,10 @@ class StreamHandler {
             const modeChanged = oldConfig?.enableRealtime !== newConfig.enableRealtime;
             const tokenChanged = oldConfig?.accessToken !== newConfig.accessToken;
             const keyChanged = oldConfig?.appKey !== newConfig.appKey;
+            const secretChanged = oldConfig?.appSecret !== newConfig.appSecret;
             
             // Reconnect if: Mode toggled OR (Realtime is ON and keys changed)
-            if (modeChanged || (newConfig.enableRealtime && (tokenChanged || keyChanged))) {
+            if (modeChanged || (newConfig.enableRealtime && (tokenChanged || keyChanged || secretChanged))) {
                 console.log(`[DataEngine] Credentials changed for ${this.symbol}. Reconnecting...`);
                 this.destroyConnection();
                 this.connect();
@@ -258,13 +259,14 @@ class StreamHandler {
         const lbConfig = this.systemConfig?.longbridge;
         
         // Decide: Real vs Mock
-        if (lbConfig && lbConfig.enableRealtime && lbConfig.accessToken) {
+        if (lbConfig && lbConfig.enableRealtime && lbConfig.accessToken && lbConfig.appKey) {
              console.log(`[DataEngine] Connecting to Longbridge REALTIME API for ${this.symbol}`);
              this.lbPoller = new LongbridgeRealtimePoller(
                  this.symbol, 
-                 lbConfig.accessToken, 
+                 lbConfig.accessToken,
                  (candle) => this.processNewCandle(candle),
-                 lbConfig.appKey // Pass App Key
+                 lbConfig.appKey,
+                 lbConfig.appSecret // Pass App Secret
              );
              this.lbPoller.connect();
         } else {
