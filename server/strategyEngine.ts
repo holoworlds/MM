@@ -274,13 +274,9 @@ export const evaluateStrategy = (
              let newQty = 0;
              let tradeVal = 0;
 
-             if (config.market === 'US_STOCK') {
-                 newQty = config.tradeQuantity || 0;
-                 tradeVal = newQty * last.close;
-             } else {
-                 newQty = config.tradeAmount / last.close;
-                 tradeVal = config.tradeAmount;
-             }
+             // Only Crypto Supported
+             newQty = config.tradeAmount / last.close;
+             tradeVal = config.tradeAmount;
 
              if (isLong && config.reverseLongToShort && canOpen) {
                 // Open Short
@@ -325,13 +321,9 @@ export const evaluateStrategy = (
           let qty = 0;
           let tradeVal = 0;
 
-          if (config.market === 'US_STOCK') {
-              qty = config.tradeQuantity || 0;
-              tradeVal = qty * last.close;
-          } else {
-              qty = config.tradeAmount / last.close;
-              tradeVal = config.tradeAmount;
-          }
+          // Only Crypto Supported
+          qty = config.tradeAmount / last.close;
+          tradeVal = config.tradeAmount;
 
           if (longEntryReason) {
               actions.push(createPayload('buy', 'long', longEntryReason, tradeVal, qty));

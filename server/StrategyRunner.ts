@@ -3,7 +3,6 @@ import { StrategyConfig, StrategyRuntime, Candle, PositionState, TradeStats, Web
 import { enrichCandlesWithIndicators } from "../services/indicatorService";
 import { evaluateStrategy } from "../services/strategyEngine";
 import { dataEngine } from "./DataEngine";
-import { LONGBRIDGE_WEBHOOK_URL } from "../constants";
 
 const INITIAL_POS_STATE: PositionState = {
     direction: 'FLAT', 
@@ -176,11 +175,7 @@ export class StrategyRunner {
 
         // Calculate Quantity logic
         if (type === 'LONG' || type === 'SHORT') { 
-            if (this.runtime.config.market === 'US_STOCK') {
-                quantity = this.runtime.config.tradeQuantity || 0;
-            } else {
-                quantity = this.runtime.config.tradeAmount / price;
-            }
+            quantity = this.runtime.config.tradeAmount / price;
         }
         if (type === 'FLAT') { 
              quantity = this.runtime.positionState.remainingQuantity; 
@@ -272,13 +267,7 @@ export class StrategyRunner {
 
         if (result.actions.length > 0) {
             // Re-generate payload to ensure it matches the current Market Type format
-            // The strategy engine returns a generic WebhookPayload, we might need to adapt it
             result.actions.forEach(action => {
-                // Determine 'act' and 'pos' from the engine's generic action
-                // Engine output: action=buy/sell, position=long/short/flat
-                // This is already consistent with our needs.
-                
-                // However, we need to ensure the correct formatting for US Stocks
                 const finalPayload = this.generatePayload(
                     action.action,
                     action.position,
@@ -304,24 +293,7 @@ export class StrategyRunner {
     ): any {
         const config = this.runtime.config;
 
-        // 1. Longbridge US Stock Format
-        if (config.market === 'US_STOCK') {
-            // Format: { symbol, action, position, quantity }
-            return {
-                symbol: config.symbol,
-                action: action, // buy/sell
-                position: position, // long/short/flat
-                quantity: quantity.toString(),
-                
-                // Add extra fields for logging/debugging, but the receiver might ignore them
-                tp_level: msg,
-                execution_price: price,
-                trade_amount: quantity * price,
-                timestamp: new Date().toISOString()
-            };
-        }
-
-        // 2. Binance / Default Crypto Format
+        // Binance / Default Crypto Format
         return {
             secret: config.secret || '',
             action: action,
@@ -351,10 +323,8 @@ export class StrategyRunner {
         };
         this.onLog(logEntry);
 
-        // Determine URL based on market
-        const url = this.runtime.config.market === 'US_STOCK' 
-            ? LONGBRIDGE_WEBHOOK_URL 
-            : this.runtime.config.webhookUrl;
+        // Determine URL based on market (Always use webhookUrl since stocks are gone)
+        const url = this.runtime.config.webhookUrl;
 
         if (url) {
             try {

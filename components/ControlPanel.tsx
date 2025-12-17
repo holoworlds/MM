@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
-import { StrategyConfig, MarketType, SystemConfig } from '../types';
-import { CRYPTO_SYMBOLS, US_STOCK_SYMBOLS, AVAILABLE_INTERVALS } from '../constants';
+import { StrategyConfig, SystemConfig } from '../types';
+import { CRYPTO_SYMBOLS, AVAILABLE_INTERVALS } from '../constants';
 
 interface ControlPanelProps {
   activeConfig: StrategyConfig;
@@ -28,35 +28,13 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
   onRemoveStrategy,
   lastPrice, 
   onManualOrder, 
-  positionStatus,
-  systemConfig,
-  updateSystemConfig
+  positionStatus
 }) => {
   
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'config' | 'settings'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'config'>('dashboard');
 
   const handleChange = (key: keyof StrategyConfig, value: any) => {
     updateConfig(activeConfig.id, { [key]: value });
-  };
-
-  const handleSysChange = (section: keyof SystemConfig, field: string, value: any) => {
-      if (updateSystemConfig && systemConfig) {
-          updateSystemConfig({
-              [section]: {
-                  ...systemConfig[section],
-                  [field]: value
-              }
-          });
-      }
-  };
-  
-  const handleMarketChange = (newMarket: string) => {
-      const market = newMarket as MarketType;
-      const defaultSymbol = market === 'US_STOCK' ? 'AAPL' : 'BTCUSDT';
-      updateConfig(activeConfig.id, { 
-          market: market, 
-          symbol: defaultSymbol
-      });
   };
 
   const handleArrayChange = (arrayKey: 'tpLevels' | 'slLevels', index: number, field: string, value: any) => {
@@ -71,7 +49,7 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
     return '空仓 (Flat)';
   }
 
-  const currentSymbols = activeConfig.market === 'US_STOCK' ? US_STOCK_SYMBOLS : CRYPTO_SYMBOLS;
+  const currentSymbols = CRYPTO_SYMBOLS;
 
   return (
     <div className="bg-white rounded-lg border border-slate-200 h-full flex shadow-sm overflow-hidden">
@@ -83,9 +61,6 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
             </button>
             <button onClick={() => setActiveTab('config')} className={`p-2 rounded-lg transition-all ${activeTab === 'config' ? 'bg-blue-600 text-white shadow' : 'text-slate-400 hover:bg-slate-200 hover:text-slate-600'}`}>
                 <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
-            </button>
-             <button onClick={() => setActiveTab('settings')} className={`p-2 rounded-lg transition-all ${activeTab === 'settings' ? 'bg-blue-600 text-white shadow' : 'text-slate-400 hover:bg-slate-200 hover:text-slate-600'}`}>
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19.428 15.428a2 2 0 00-1.022-.547l-2.384-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" /></svg>
             </button>
         </div>
 
@@ -106,7 +81,7 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
                                 <div className="font-bold text-xs truncate text-slate-800">{s.name}</div>
                                 <div className="text-[10px] text-slate-500 flex justify-between">
                                     <span>{s.symbol} {s.interval}</span>
-                                    <span className={`${s.market === 'US_STOCK' ? 'text-purple-500' : 'text-slate-400'}`}>{s.market === 'US_STOCK' ? '美股' : 'CRYPTO'}</span>
+                                    <span className="text-slate-400">CRYPTO</span>
                                 </div>
                                 <div className="flex justify-between items-center mt-1">
                                     <div className={`w-2 h-2 rounded-full ${s.isActive ? 'bg-emerald-500' : 'bg-slate-300'}`}></div>
@@ -139,21 +114,16 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
                     </div>
 
                     <div className="bg-white p-3 rounded-lg border border-slate-200 shadow-sm">
-                        <h3 className="text-xs font-bold text-slate-700 mb-3 border-b border-slate-100 pb-2">市场 & 基础设置</h3>
+                        <h3 className="text-xs font-bold text-slate-700 mb-3 border-b border-slate-100 pb-2">基础设置</h3>
                         <div className="space-y-3">
                             <Input label="策略名称" value={activeConfig.name} onChange={(v: string) => handleChange('name', v)} />
-                            <Select label="市场类型" value={activeConfig.market || 'CRYPTO'} options={['CRYPTO', 'US_STOCK']} onChange={handleMarketChange} />
                             <div>
-                                <label className="block text-slate-600 text-xs mb-1 font-medium">交易对 / 代码</label>
-                                <input list="symbols" value={activeConfig.symbol} onChange={(e) => handleChange('symbol', e.target.value.toUpperCase())} className="w-full bg-white border border-slate-300 rounded p-1.5 text-xs text-slate-900 focus:border-blue-500 outline-none shadow-sm" placeholder={activeConfig.market === 'US_STOCK' ? "如 AAPL, TSLA" : "如 BTCUSDT"}/>
+                                <label className="block text-slate-600 text-xs mb-1 font-medium">交易对</label>
+                                <input list="symbols" value={activeConfig.symbol} onChange={(e) => handleChange('symbol', e.target.value.toUpperCase())} className="w-full bg-white border border-slate-300 rounded p-1.5 text-xs text-slate-900 focus:border-blue-500 outline-none shadow-sm" placeholder="如 BTCUSDT"/>
                                 <datalist id="symbols">{currentSymbols.map(s => <option key={s} value={s} />)}</datalist>
                             </div>
                             <Select label="K线周期" value={activeConfig.interval} options={AVAILABLE_INTERVALS} onChange={(v: string) => handleChange('interval', v)} />
-                            {activeConfig.market === 'US_STOCK' ? (
-                                <Input label="开仓数量 (股)" type="number" value={activeConfig.tradeQuantity || 0} onChange={(v: string) => handleChange('tradeQuantity', parseFloat(v))} />
-                            ) : (
-                                <Input label="开仓金额 (U / USD)" type="number" value={activeConfig.tradeAmount} onChange={(v: string) => handleChange('tradeAmount', parseFloat(v))} />
-                            )}
+                            <Input label="开仓金额 (U / USD)" type="number" value={activeConfig.tradeAmount} onChange={(v: string) => handleChange('tradeAmount', parseFloat(v))} />
                         </div>
                     </div>
                 </div>
@@ -367,55 +337,6 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
                         </div>
                     </div>
 
-                </div>
-            )}
-            
-            {activeTab === 'settings' && (
-                <div className="space-y-6 pb-10">
-                    <div className="bg-white p-3 rounded-lg border border-slate-200 shadow-sm">
-                        <h3 className="text-sm font-bold text-slate-800 mb-4 pb-2 border-b border-slate-100 flex items-center gap-2">
-                            <span className="text-lg">⚙️</span> 全局系统设置
-                        </h3>
-                        {!systemConfig ? (
-                           <div className="p-4 text-center text-slate-400 text-xs">正在加载配置...</div>
-                        ) : (
-                            <div className="bg-indigo-50 p-4 rounded-lg border border-indigo-100">
-                                <div className="flex justify-between items-center mb-4">
-                                    <h4 className="font-bold text-indigo-800">Longbridge (长桥) API 配置</h4>
-                                    <Toggle 
-                                        label="启用实时数据" 
-                                        checked={systemConfig.longbridge.enableRealtime} 
-                                        onChange={(v: boolean) => handleSysChange('longbridge', 'enableRealtime', v)} 
-                                        className="font-bold text-indigo-600"
-                                    />
-                                </div>
-                                <div className="space-y-3">
-                                    <p className="text-xs text-indigo-600 mb-2">
-                                        请填写长桥 Open API 凭证以获取美股实时数据。如未填写或未启用，系统将使用模拟数据。
-                                    </p>
-                                    <Input 
-                                        label="Access Token (OAuth / Persistent Token)" 
-                                        value={systemConfig.longbridge.accessToken} 
-                                        onChange={(v: string) => handleSysChange('longbridge', 'accessToken', v)} 
-                                        type="password"
-                                    />
-                                    <div className="grid grid-cols-2 gap-3">
-                                        <Input 
-                                            label="App Key (Optional)" 
-                                            value={systemConfig.longbridge.appKey} 
-                                            onChange={(v: string) => handleSysChange('longbridge', 'appKey', v)} 
-                                        />
-                                        <Input 
-                                            label="App Secret (Optional)" 
-                                            value={systemConfig.longbridge.appSecret} 
-                                            onChange={(v: string) => handleSysChange('longbridge', 'appSecret', v)} 
-                                            type="password"
-                                        />
-                                    </div>
-                                </div>
-                            </div>
-                        )}
-                    </div>
                 </div>
             )}
         </div>

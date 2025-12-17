@@ -3,7 +3,6 @@ import WebSocket from 'ws';
 import { Candle, IntervalType, SymbolType, MarketType, SystemConfig } from "../types";
 import { BINANCE_WS_BASE, AVAILABLE_INTERVALS } from "../constants";
 import { fetchHistoricalCandles, parseSocketMessage } from "../services/binanceService";
-import { fetchHistoricalCandlesLB, LongbridgeSocketMock, LongbridgeRealtimePoller } from "../services/longbridgeService";
 import { determineBaseConfig, resampleCandles } from "../services/resampleService";
 import { FileStore } from "./FileStore";
 
@@ -23,8 +22,6 @@ class StreamHandler {
     private baseInterval: IntervalType;
     private market: MarketType;
     private ws: WebSocket | null = null;
-    private lbMock: LongbridgeSocketMock | null = null;
-    private lbPoller: LongbridgeRealtimePoller | null = null;
     private isConnected: boolean = false;
     
     // The Source of Truth: Buffer of Base Interval Candles (e.g., 1m)
@@ -52,7 +49,7 @@ class StreamHandler {
 
     public isAlwaysActive: boolean = false;
 
-    // Current System Config (for API keys)
+    // Current System Config (for API keys) - Kept for compatibility but unused
     private systemConfig: SystemConfig | null = null;
 
     constructor(symbol: SymbolType, baseInterval: IntervalType, market: MarketType) {
@@ -62,25 +59,7 @@ class StreamHandler {
     }
 
     public updateSystemConfig(config: SystemConfig) {
-        const oldConfig = this.systemConfig?.longbridge;
-        const newConfig = config.longbridge;
-        
         this.systemConfig = config;
-        
-        // Check if we need to reconnect due to credential changes
-        if (this.market === 'US_STOCK' && this.isConnected) {
-            const modeChanged = oldConfig?.enableRealtime !== newConfig.enableRealtime;
-            const tokenChanged = oldConfig?.accessToken !== newConfig.accessToken;
-            const keyChanged = oldConfig?.appKey !== newConfig.appKey;
-            const secretChanged = oldConfig?.appSecret !== newConfig.appSecret;
-            
-            // Reconnect if: Mode toggled OR (Realtime is ON and keys changed)
-            if (modeChanged || (newConfig.enableRealtime && (tokenChanged || keyChanged || secretChanged))) {
-                console.log(`[DataEngine] Credentials changed for ${this.symbol}. Reconnecting...`);
-                this.destroyConnection();
-                this.connect();
-            }
-        }
     }
 
     public setAlwaysActive(active: boolean) {
@@ -113,13 +92,8 @@ class StreamHandler {
             const lastTime = localData[localData.length - 1].time;
             try {
                 let newData: Candle[] = [];
-                if (this.market === 'CRYPTO') {
-                    newData = await fetchHistoricalCandles(this.symbol, this.baseInterval, lastTime + 1);
-                } else {
-                    // Pass config to LB service
-                    const lbConfig = this.systemConfig?.longbridge;
-                    newData = await fetchHistoricalCandlesLB(this.symbol, this.baseInterval, lastTime + 1, undefined, lbConfig);
-                }
+                // Only Crypto supported
+                newData = await fetchHistoricalCandles(this.symbol, this.baseInterval, lastTime + 1);
                 
                 if (newData.length > 0) {
                     console.log(`[DataEngine] Fetched ${newData.length} new candles for ${this.symbol}`);
@@ -132,26 +106,20 @@ class StreamHandler {
             // 3. Deep Fetch
             console.log(`[DataEngine] Deep fetching history for ${this.symbol} (${this.market})...`);
             
-            if (this.market === 'CRYPTO') {
-                let allFetched: Candle[] = [];
-                let endTime: number | undefined = undefined; 
-                for (let i = 0; i < 3; i++) {
-                    try {
-                        const batch = await fetchHistoricalCandles(this.symbol, this.baseInterval, undefined, endTime);
-                        if (batch.length === 0) break;
-                        allFetched = [...batch, ...allFetched];
-                        endTime = batch[0].time - 1;
-                        if (batch.length < 500) break; 
-                    } catch (e) { break; }
-                }
-                const uniqueMap = new Map();
-                allFetched.forEach(c => uniqueMap.set(c.time, c));
-                this.baseCandles = Array.from(uniqueMap.values()).sort((a: any, b: any) => a.time - b.time);
-            } else {
-                // US Stock Initial Fetch with Config
-                const lbConfig = this.systemConfig?.longbridge;
-                this.baseCandles = await fetchHistoricalCandlesLB(this.symbol, this.baseInterval, undefined, undefined, lbConfig);
+            let allFetched: Candle[] = [];
+            let endTime: number | undefined = undefined; 
+            for (let i = 0; i < 3; i++) {
+                try {
+                    const batch = await fetchHistoricalCandles(this.symbol, this.baseInterval, undefined, endTime);
+                    if (batch.length === 0) break;
+                    allFetched = [...batch, ...allFetched];
+                    endTime = batch[0].time - 1;
+                    if (batch.length < 500) break; 
+                } catch (e) { break; }
             }
+            const uniqueMap = new Map();
+            allFetched.forEach(c => uniqueMap.set(c.time, c));
+            this.baseCandles = Array.from(uniqueMap.values()).sort((a: any, b: any) => a.time - b.time);
             
             console.log(`[DataEngine] Initialized ${this.symbol} with ${this.baseCandles.length} candles.`);
         }
@@ -164,7 +132,7 @@ class StreamHandler {
         // Initial Save
         this.saveToDisk();
 
-        // 4. Connect WebSocket (or Mock)
+        // 4. Connect WebSocket
         this.connect();
     }
 
@@ -236,50 +204,11 @@ class StreamHandler {
             this.ws.terminate();
             this.ws = null;
         }
-        if (this.lbMock) {
-            this.lbMock.terminate();
-            this.lbMock = null;
-        }
-        if (this.lbPoller) {
-            this.lbPoller.terminate();
-            this.lbPoller = null;
-        }
         this.isConnected = false;
     }
 
     private connect() {
-        if (this.market === 'CRYPTO') {
-            this.connectBinance();
-        } else {
-            this.connectLongbridge();
-        }
-    }
-
-    private connectLongbridge() {
-        const lbConfig = this.systemConfig?.longbridge;
-        
-        // Decide: Real vs Mock
-        if (lbConfig && lbConfig.enableRealtime && lbConfig.accessToken && lbConfig.appKey) {
-             console.log(`[DataEngine] Connecting to Longbridge REALTIME API for ${this.symbol}`);
-             this.lbPoller = new LongbridgeRealtimePoller(
-                 this.symbol, 
-                 lbConfig.accessToken,
-                 (candle) => this.processNewCandle(candle),
-                 lbConfig.appKey,
-                 lbConfig.appSecret // Pass App Secret
-             );
-             this.lbPoller.connect();
-        } else {
-             // Fallback to Mock
-             const lastCandle = this.baseCandles.length > 0 ? this.baseCandles[this.baseCandles.length - 1] : null;
-             const startPrice = lastCandle ? lastCandle.close : 0;
-             
-             this.lbMock = new LongbridgeSocketMock(this.symbol, startPrice, (candle) => {
-                  this.processNewCandle(candle);
-             });
-             this.lbMock.connect();
-        }
-        this.isConnected = true;
+        this.connectBinance();
     }
 
     private connectBinance() {
@@ -389,13 +318,10 @@ class DataEngine {
 
     public updateSystemConfig(config: SystemConfig) {
         this.systemConfig = config;
-        // Propagate to all existing streams
         this.streams.forEach(stream => stream.updateSystemConfig(config));
     }
 
     public async ensureActive(symbol: SymbolType, market: MarketType = 'CRYPTO') {
-         // console.log(`[DataEngine] === Pre-warming ALL cycles for ${symbol} (${market}) ===`);
-         
          for (const interval of AVAILABLE_INTERVALS) {
              const { baseInterval } = determineBaseConfig(interval);
              const streamKey = `${market}_${symbol}_${baseInterval}`;
@@ -410,7 +336,6 @@ class DataEngine {
              stream.setAlwaysActive(true);
              stream.addActiveTargetInterval(interval);
          }
-         // console.log(`[DataEngine] === Completed setup for ${symbol} ===\n`);
     }
 
     public async subscribe(

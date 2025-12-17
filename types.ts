@@ -5,7 +5,7 @@ export type IntervalType =
   | '1h' | '2h' | '3h' | '4h' | '6h' | '8h' | '10h' | '12h' 
   | '1d' | '2d' | '3d' | '1w' | '1M';
 
-export type MarketType = 'CRYPTO' | 'US_STOCK';
+export type MarketType = 'CRYPTO';
 
 export interface Candle {
   symbol: string;
@@ -52,16 +52,8 @@ export interface AlertLog {
 }
 
 // --- System Configuration ---
-export interface LongbridgeConfig {
-  enableRealtime: boolean;
-  appKey: string;
-  appSecret: string;
-  accessToken: string;
-}
-
-export interface SystemConfig {
-  longbridge: LongbridgeConfig;
-}
+// (Empty as Longbridge config is removed)
+export interface SystemConfig {}
 
 // --- Strategy Configuration Interfaces ---
 
@@ -77,7 +69,7 @@ export interface StrategyConfig {
   
   // Sizing
   tradeAmount: number;
-  tradeQuantity?: number;
+  // tradeQuantity removed (was for stocks)
 
   webhookUrl: string;
   secret: string;

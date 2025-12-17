@@ -5,11 +5,7 @@ export const CRYPTO_SYMBOLS = [
     'BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'BNBUSDT', 'XRPUSDT', 'DOGEUSDT', 'ADAUSDT', 'ZECUSDT'
 ] as const;
 
-export const US_STOCK_SYMBOLS = [
-    'AAPL', 'TSLA', 'NVDA', 'AMD', 'MSFT', 'COIN', 'MSTR', 'GOOGL', 'AMZN', 'META'
-] as const;
-
-export const AVAILABLE_SYMBOLS = [...CRYPTO_SYMBOLS, ...US_STOCK_SYMBOLS] as const;
+export const AVAILABLE_SYMBOLS = [...CRYPTO_SYMBOLS] as const;
 
 export const PRELOAD_SYMBOLS = ['BTCUSDT', 'ETHUSDT'];
 
@@ -21,7 +17,6 @@ export const AVAILABLE_INTERVALS = [
 
 export const BINANCE_WS_BASE = 'wss://fstream.binance.com/stream?streams=';
 export const BINANCE_REST_BASE = 'https://fapi.binance.com/fapi/v1';
-export const LONGBRIDGE_WEBHOOK_URL = 'http://43.167.199.156:80/webhooklongbridge';
 
 export const DEFAULT_CONFIG: StrategyConfig = {
   id: 'default_1',
@@ -33,7 +28,6 @@ export const DEFAULT_CONFIG: StrategyConfig = {
   interval: '1m',
   
   tradeAmount: 0,
-  tradeQuantity: 0,
 
   webhookUrl: 'http://43.167.199.156:80/webhookbinance',
   secret: '',

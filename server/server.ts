@@ -26,14 +26,8 @@ const PORT = 3001;
 // --- Server State ---
 const strategies: Record<string, StrategyRunner> = {};
 let logs: any[] = [];
-let systemConfig: SystemConfig = {
-    longbridge: {
-        enableRealtime: false,
-        appKey: '',
-        appSecret: '',
-        accessToken: ''
-    }
-};
+// Empty System Config
+let systemConfig: SystemConfig = {};
 
 // --- Persistence Helpers ---
 function saveSystemState() {
@@ -45,7 +39,7 @@ function saveSystemState() {
             FileStore.save('strategies', strategySnapshots);
         }
         FileStore.save('logs', logs);
-        FileStore.save('system_config', systemConfig);
+        // FileStore.save('system_config', systemConfig); // No system config to save anymore
     } catch (e) {
         console.error('[System] Error saving state:', e);
     }
@@ -54,15 +48,6 @@ function saveSystemState() {
 // --- Initialization with Recovery ---
 async function initializeSystem() {
     console.log('[System] Initializing...');
-
-    // 0. Restore System Config
-    const savedConfig = FileStore.load<SystemConfig>('system_config');
-    if (savedConfig) {
-        systemConfig = { ...systemConfig, ...savedConfig };
-        console.log('[System] System Configuration loaded.');
-        // Update DataEngine with loaded config
-        dataEngine.updateSystemConfig(systemConfig);
-    }
 
     // 0.5 Pre-warm Data (Background Collection)
     console.log(`[System] Pre-warming data for: ${PRELOAD_SYMBOLS.join(', ')}`);
@@ -84,7 +69,12 @@ async function initializeSystem() {
         
         for (const snapshot of savedSnapshots) {
             try {
-                const sanitizedConfig = { ...DEFAULT_CONFIG, ...snapshot.config };
+                // Force market to CRYPTO just in case old configs have US_STOCK
+                const sanitizedConfig = { 
+                    ...DEFAULT_CONFIG, 
+                    ...snapshot.config,
+                    market: 'CRYPTO' 
+                };
 
                 const runner = new StrategyRunner(
                     sanitizedConfig,
@@ -139,7 +129,7 @@ function broadcastFullState(socketId?: string) {
     if (socketId) {
         io.to(socketId).emit('full_state', fullState);
         io.to(socketId).emit('logs_update', logs);
-        io.to(socketId).emit('system_config_update', systemConfig);
+        // io.to(socketId).emit('system_config_update', systemConfig);
     } else {
         io.emit('full_state', fullState);
     }
@@ -157,20 +147,6 @@ io.on('connection', (socket) => {
 
     // Send initial data
     broadcastFullState(socket.id);
-
-    // System Config Updates
-    socket.on('cmd_update_system_config', (newConfig: Partial<SystemConfig>) => {
-        systemConfig = { ...systemConfig, ...newConfig };
-        // Deep merge for nested longbridge config if needed
-        if (newConfig.longbridge) {
-            systemConfig.longbridge = { ...systemConfig.longbridge, ...newConfig.longbridge };
-        }
-        
-        saveSystemState();
-        dataEngine.updateSystemConfig(systemConfig);
-        io.emit('system_config_update', systemConfig);
-        console.log('[System] Configuration updated via UI');
-    });
 
     // Strategy handlers
     socket.on('cmd_update_config', ({ id, updates }: { id: string, updates: Partial<StrategyConfig> }) => {

@@ -1,5 +1,5 @@
 
-import { Candle, IntervalType, SymbolType, LongbridgeConfig } from "../types";
+import { Candle, IntervalType, SymbolType } from "../types";
 import { createRequire } from 'module';
 
 // Robustly load longport SDK (Handles cases where package is missing or CJS/ESM mismatch)
@@ -12,9 +12,12 @@ let isSdkLoaded = false;
 
 try {
     const lp = require('longport');
-    Config = lp.Config;
-    QuoteContext = lp.QuoteContext;
-    SubType = lp.SubType;
+    // Robustly handle CommonJS vs ESM default export
+    const sdk = lp.default ? lp.default : lp;
+    
+    Config = sdk.Config;
+    QuoteContext = sdk.QuoteContext;
+    SubType = sdk.SubType;
     isSdkLoaded = true;
 } catch (e) {
     console.warn("[LongbridgeService] 'longport' package not found or failed to load. Realtime features will fall back to mock data.");
@@ -52,75 +55,28 @@ const normalizeSymbol = (symbol: string): string => {
 
 // Fetch Quote via HTTP Snapshot (Pull Mode) - Used for History alignment only
 async function fetchQuoteReal(symbolRaw: string, token: string, appKey?: string): Promise<number | null> {
-    const symbol = normalizeSymbol(symbolRaw);
-    try {
-        const headers: Record<string, string> = {
-            'Authorization': token.startsWith('Bearer ') ? token : `Bearer ${token}`,
-            'Content-Type': 'application/json',
-            'Accept': 'application/json' 
-        };
-        
-        const url = `${LB_API_HOST}/v1/quote/quote?symbol=${symbol}`;
-        const response = await fetch(url, { headers });
-
-        if (!response.ok) {
-            const errorBody = await response.text();
-            console.error(`[LB API DEBUG] HTTP ${response.status} for ${symbol}. Response:`, errorBody);
-            return null;
-        }
-
-        const data = await response.json();
-        
-        if (data.code !== 0) {
-             console.error(`[LB API DEBUG] Business Error Code ${data.code}: ${data.message}`);
-             return null;
-        }
-
-        let targetItem = null;
-        if (data.data) {
-             // Priority 1: secu_quote
-             if (Array.isArray(data.data.secu_quote) && data.data.secu_quote.length > 0) {
-                 targetItem = data.data.secu_quote[0];
-             } 
-             // Priority 2: list
-             else if (Array.isArray(data.data.list) && data.data.list.length > 0) {
-                targetItem = data.data.list[0];
-            } 
-            // Priority 3: quote
-            else if (Array.isArray(data.data.quote) && data.data.quote.length > 0) {
-                targetItem = data.data.quote[0];
-            }
-        }
-
-        if (targetItem) {
-             const price = parseFloat(targetItem.last_done || targetItem.current_price || targetItem.close);
-             if (!isNaN(price)) return price;
-        }
-        
-        return null;
-    } catch (e) {
-        console.error(`[LB API DEBUG] Network/Parse Error for ${symbol}:`, e);
-        return null;
-    }
+    // FUNCTION DISABLED TO PREVENT 404 SPAM due to permission/environment issues
+    return null;
 }
 
 export const fetchHistoricalCandlesLB = async (
   symbol: SymbolType, 
   interval: IntervalType, 
   startTime?: number, 
-  endTime?: number,
-  config?: LongbridgeConfig
+  endTime?: number
 ): Promise<Candle[]> => {
     
     let endPrice = getBasePrice(symbol);
     
-    // Attempt to align history with real current price using HTTP snapshot
+    // DISABLED: Do not attempt to align with real price via HTTP to avoid 404 errors
+    /*
     if (config?.enableRealtime && config?.accessToken) {
         const realPrice = await fetchQuoteReal(symbol, config.accessToken, config.appKey);
         if (realPrice) {
             endPrice = realPrice;
         }
     }
+    */
 
     // Generate Mock History ending at endPrice
     const now = Date.now();
@@ -166,7 +122,7 @@ export class LongbridgeRealtimePoller {
     private accessToken: string;
     private callback: (candle: Candle) => void;
     
-    private ctx: any = null; // Use any to avoid TS errors if SDK is missing
+    private ctx: any = null; 
     private mockInterval: ReturnType<typeof setInterval> | null = null;
     
     private currentCandle: Candle | null = null;
@@ -181,7 +137,7 @@ export class LongbridgeRealtimePoller {
     }
 
     public async connect() {
-        if (!isSdkLoaded || !Config || !QuoteContext) {
+        if (!isSdkLoaded || !QuoteContext) {
             console.log(`[LB SDK] SDK module not available. Starting mock fallback for ${this.symbol}.`);
             this.startMockFallback();
             return;
@@ -190,15 +146,21 @@ export class LongbridgeRealtimePoller {
         console.log(`[LB SDK] Initializing SDK for ${this.symbol}...`);
         
         try {
-            // Configure SDK
-            const config = new Config({
+            // FIX: Use plain object for config instead of Class
+            const config = {
                 appKey: this.appKey,
                 appSecret: this.appSecret,
                 accessToken: this.accessToken,
                 enablePrintQuotePackages: false
-            });
+            };
 
-            this.ctx = new QuoteContext(config);
+            // FIX: QuoteContext in the native binding is likely a Factory function, not a Constructor.
+            // Removing 'new' to prevent "Class contains no constructor" error.
+            if (typeof QuoteContext !== 'function') {
+                throw new Error(`QuoteContext is not callable (Type: ${typeof QuoteContext})`);
+            }
+
+            this.ctx = QuoteContext(config);
 
             // Handle Quote Updates
             this.ctx.setOnQuote((symbol: any, quote: any) => {
@@ -214,7 +176,9 @@ export class LongbridgeRealtimePoller {
             });
 
             // Subscribe
-            await this.ctx.subscribe([this.symbol], [SubType.Quote], true);
+            // Use SubType if available, otherwise string 'Quote'
+            const quoteType = SubType ? SubType.Quote : 'Quote';
+            await this.ctx.subscribe([this.symbol], [quoteType], true);
             console.log(`[LB SDK] Subscribed to ${this.symbol} successfully.`);
 
         } catch (error) {

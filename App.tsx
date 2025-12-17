@@ -29,15 +29,6 @@ const INITIAL_POS_STATE: PositionState = {
 };
 const INITIAL_STATS: TradeStats = { dailyTradeCount: 0, lastTradeDate: '', lastActionCandleTime: 0 };
 
-const DEFAULT_SYSTEM_CONFIG: SystemConfig = {
-    longbridge: {
-        enableRealtime: false,
-        appKey: '',
-        appSecret: '',
-        accessToken: ''
-    }
-};
-
 // --- Mock Data Generator for Demo Mode ---
 const generateMockCandles = (count: number, startPrice: number): Candle[] => {
     const candles: Candle[] = [];
@@ -87,8 +78,7 @@ const App: React.FC = () => {
           lastPrice: 0
       }
   });
-  // Fix: Initialize with default config so UI renders immediately
-  const [systemConfig, setSystemConfig] = useState<SystemConfig>(DEFAULT_SYSTEM_CONFIG);
+  
   const [activeStrategyId, setActiveStrategyId] = useState<string>(DEFAULT_CONFIG.id);
   const [logs, setLogs] = useState<AlertLog[]>([]);
   const [isConnected, setIsConnected] = useState(false);
@@ -135,13 +125,6 @@ const App: React.FC = () => {
         });
     });
     
-    // System Config Init
-    socket.on('system_config_update', (config: SystemConfig) => {
-        if (config) {
-            setSystemConfig(config);
-        }
-    });
-
     // Receive Incremental Updates
     socket.on('state_update', ({ id, runtime }: { id: string, runtime: StrategyRuntime }) => {
         pendingUpdatesRef.current[id] = runtime;
@@ -209,12 +192,6 @@ const App: React.FC = () => {
               }
           };
       });
-  };
-
-  const updateSystemConfig = (cfg: Partial<SystemConfig>) => {
-      socketRef.current?.emit('cmd_update_system_config', cfg);
-      // Optimistic
-      setSystemConfig(prev => ({ ...prev, ...cfg }));
   };
 
   const addStrategy = () => {
@@ -301,8 +278,6 @@ const App: React.FC = () => {
            lastPrice={activeStrategy.lastPrice} 
            onManualOrder={handleManualOrder}
            positionStatus={activeStrategy.positionState.direction}
-           systemConfig={systemConfig}
-           updateSystemConfig={updateSystemConfig}
         />
       </div>
 
