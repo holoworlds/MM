@@ -1,5 +1,4 @@
 
-
 import { Candle, IntervalType, SymbolType } from "../types";
 import { BINANCE_REST_BASE } from "../constants";
 
@@ -10,27 +9,19 @@ export const fetchHistoricalCandles = async (
   endTime?: number
 ): Promise<Candle[]> => {
   try {
-    // Binance Futures Endpoint: /klines
-    // Increase limit to 1500 (max allowed) to support resampling from smaller intervals
+    // Increase limit to max 1500 for better resampling buffer
     let url = `${BINANCE_REST_BASE}/klines?symbol=${symbol}&interval=${interval}&limit=1500`;
     
-    if (startTime) {
-        url += `&startTime=${startTime}`;
-    }
-    if (endTime) {
-        url += `&endTime=${endTime}`;
-    }
+    if (startTime) url += `&startTime=${startTime}`;
+    if (endTime) url += `&endTime=${endTime}`;
     
     const response = await fetch(url);
     const data = await response.json();
 
-    if (!Array.isArray(data)) {
-        console.error("Invalid response from Binance (Expected Array):", JSON.stringify(data));
-        return [];
-    }
+    if (!Array.isArray(data)) return [];
 
     return data.map((d: any) => ({
-      symbol: symbol, // Inject Identity
+      symbol: symbol,
       time: d[0],
       open: parseFloat(d[1]),
       high: parseFloat(d[2]),
@@ -51,7 +42,7 @@ export const parseSocketMessage = (msg: any): Candle | null => {
   const k = msg.k;
 
   return {
-    symbol: msg.s, // Binance provides symbol in 's' field of the data payload. Vital for Zero Tolerance check.
+    symbol: msg.s,
     time: k.t,
     open: parseFloat(k.o),
     high: parseFloat(k.h),

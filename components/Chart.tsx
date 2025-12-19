@@ -52,61 +52,43 @@ const CustomTooltip = ({ active, payload, label }: any) => {
 };
 
 const Chart: React.FC<ChartProps> = ({ data, logs, symbol, interval, market }) => {
-  // Pre-process data for the Bar (Candle Body) representation
   const processedData = useMemo(() => {
      return data.map(d => ({
         ...d,
         body: [Math.min(d.open, d.close), Math.max(d.open, d.close)],
-        color: d.close >= d.open ? '#10b981' : '#f43f5e' // Emerald-500, Rose-500
+        color: d.close >= d.open ? '#10b981' : '#f43f5e'
      }));
   }, [data]);
 
-  // Generate markers from logs
   const markers = useMemo(() => {
     return logs.map(log => {
         const logTime = log.timestamp;
-        
-        // Find candle where logTime falls within [candle.time, nextCandle.time)
         let closestCandle = null;
         for(let i = data.length - 1; i >= 0; i--) {
-            if (data[i].time <= logTime) {
-                closestCandle = data[i];
-                break;
-            }
+            if (data[i].time <= logTime) { closestCandle = data[i]; break; }
         }
-        
         if (!closestCandle) return null;
-
         const isBuy = log.payload.action === 'buy' || log.payload.action === 'buy_to_cover';
-        const yPos = isBuy ? closestCandle.low : closestCandle.high;
-        
         return {
-            id: log.id,
-            x: closestCandle.time,
-            y: yPos,
-            type: isBuy ? 'buy' : 'sell',
-            label: isBuy ? '▲' : '▼',
-            color: isBuy ? '#10b981' : '#f43f5e'
+            id: log.id, x: closestCandle.time, y: isBuy ? closestCandle.low : closestCandle.high,
+            type: isBuy ? 'buy' : 'sell', label: isBuy ? '▲' : '▼', color: isBuy ? '#10b981' : '#f43f5e'
         };
     }).filter(Boolean) as any[];
   }, [logs, data]);
 
-  // Default Zoom: Show last 91 candles
-  const startIndex = Math.max(0, data.length - 91);
-  const minPrice = data.length > 0 ? Math.min(...data.map(d => d.low)) : 0;
-  const maxPrice = data.length > 0 ? Math.max(...data.map(d => d.high)) : 0;
-  const padding = (maxPrice - minPrice) * 0.1;
+  const minPrice = useMemo(() => data.length > 0 ? Math.min(...data.map(d => d.low)) : 0, [data]);
+  const maxPrice = useMemo(() => data.length > 0 ? Math.max(...data.map(d => d.high)) : 0, [data]);
+  const padding = (maxPrice - minPrice) * 0.05 || 1;
 
-  // Use a key based on symbol/interval to force re-mounting when context changes. 
-  const chartKey = `${symbol}-${interval}`;
+  const startIndex = Math.max(0, data.length - 60);
 
-  if (data.length === 0) {
+  if (data.length < 2) {
     return (
       <div className="h-full flex flex-col items-center justify-center text-slate-400 gap-3">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
-          <div className="text-xs">
-             正在加载 {symbol} ({interval}) 数据...<br/>
-             <span className="text-[10px] text-slate-300">如长时间未显示，请检查网络连接</span>
+          <div className="text-xs text-center">
+             正在加载 {symbol} ({interval}) 实时行情...<br/>
+             <span className="text-[10px] text-slate-300">如果是 1m/2m 周期，可能需要约 10-30 秒初始化缓存</span>
           </div>
       </div>
     );
@@ -114,14 +96,14 @@ const Chart: React.FC<ChartProps> = ({ data, logs, symbol, interval, market }) =
 
   return (
     <ResponsiveContainer width="100%" height="100%">
-      <ComposedChart key={chartKey} data={processedData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
+      <ComposedChart data={processedData} margin={{ top: 20, right: 30, left: 10, bottom: 5 }}>
         <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
         <XAxis 
           dataKey="time" 
           tickFormatter={formatXAxis} 
           stroke="#64748b" 
-          tick={{ fontSize: 12 }}
-          minTickGap={30}
+          tick={{ fontSize: 10 }}
+          minTickGap={40}
           type="number"
           domain={['dataMin', 'dataMax']}
         />
@@ -129,54 +111,32 @@ const Chart: React.FC<ChartProps> = ({ data, logs, symbol, interval, market }) =
           domain={[minPrice - padding, maxPrice + padding]} 
           orientation="right" 
           stroke="#64748b" 
-          tick={{ fontSize: 12 }} 
-          tickFormatter={(val) => val.toFixed(2)}
-          allowDataOverflow={false}
+          tick={{ fontSize: 10 }} 
+          tickFormatter={(val) => val.toFixed(val > 100 ? 2 : 4)}
         />
-        <Tooltip content={<CustomTooltip />} />
+        <Tooltip content={<CustomTooltip />} isAnimationActive={false} />
         
-        {/* EMAs */}
-        <Line type="monotone" dataKey="ema7" stroke="#eab308" dot={false} strokeWidth={2} isAnimationActive={false} />
-        <Line type="monotone" dataKey="ema25" stroke="#3b82f6" dot={false} strokeWidth={2} isAnimationActive={false} />
-        <Line type="monotone" dataKey="ema99" stroke="#a855f7" dot={false} strokeWidth={2} isAnimationActive={false} />
+        <Line type="monotone" dataKey="ema7" stroke="#eab308" dot={false} strokeWidth={1.5} isAnimationActive={false} />
+        <Line type="monotone" dataKey="ema25" stroke="#3b82f6" dot={false} strokeWidth={1.5} isAnimationActive={false} />
+        <Line type="monotone" dataKey="ema99" stroke="#a855f7" dot={false} strokeWidth={1.5} isAnimationActive={false} />
 
-        {/* Candle Bodies - using Bar with range */}
         <Bar dataKey="body" isAnimationActive={false}>
             {processedData.map((entry, index) => (
-              <Cell key={`cell-${index}`} fill={entry.color} stroke={entry.color} />
+              <Cell key={`cell-${index}`} fill={entry.color} />
             ))}
         </Bar>
 
-        {/* Trade Markers */}
         {markers.map((m) => (
             <ReferenceDot
-                key={m.id}
-                x={m.x}
-                y={m.y}
-                r={6}
-                fill={m.color}
-                stroke="#fff"
-                strokeWidth={1}
-                label={{ 
-                    value: m.label, 
-                    position: m.type === 'buy' ? 'bottom' : 'top', 
-                    fill: m.color, 
-                    fontSize: 16, 
-                    fontWeight: 'bold' 
-                }}
+                key={m.id} x={m.x} y={m.y} r={5} fill={m.color} stroke="#fff" strokeWidth={1}
+                label={{ value: m.label, position: m.type === 'buy' ? 'bottom' : 'top', fill: m.color, fontSize: 14, fontWeight: 'bold' }}
             />
         ))}
 
-        {/* Brush for Zooming */}
         <Brush 
-           key={startIndex} // Update key to force refresh when data shifts
-           dataKey="time" 
-           height={30} 
-           stroke="#cbd5e1" 
-           tickFormatter={formatXAxis}
-           startIndex={startIndex}
+           dataKey="time" height={25} stroke="#cbd5e1" 
+           tickFormatter={formatXAxis} startIndex={startIndex}
         />
-
       </ComposedChart>
     </ResponsiveContainer>
   );

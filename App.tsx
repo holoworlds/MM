@@ -9,8 +9,8 @@ import LogPanel from './components/LogPanel';
 import { enrichCandlesWithIndicators } from './services/indicatorService';
 
 // Determine Socket URL based on environment
-const isEnvDefined = import.meta && import.meta.env;
-const isProduction = isEnvDefined ? import.meta.env.PROD : true;
+// Fix: Use type casting to 'any' to avoid TypeScript errors when ImportMeta.env is not defined in standard types
+const isProduction = (import.meta as any).env?.PROD !== false;
 
 const SERVER_URL = isProduction 
   ? `${window.location.protocol}//${window.location.hostname}:3001`
