@@ -113,4 +113,10 @@ export const DEFAULT_CONFIG: StrategyConfig = {
   reverseShortToLong: true,
 
   maxDailyTrades: 5,
+
+  // 延后开仓
+  useDelayedEntry: false,
+  delayedEntryTargetCount: 1,
+  delayedEntryActivationTime: 0,
+  delayedEntryType: 'BOTH'
 };

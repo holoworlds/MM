@@ -21,6 +21,7 @@ interface ChartProps {
   symbol: string;
   interval: string;
   market: MarketType;
+  delayedEntryActivationTime?: number; // 新增：延后开仓激活时间
 }
 
 const formatXAxis = (tickItem: number) => {
@@ -51,7 +52,7 @@ const CustomTooltip = ({ active, payload, label }: any) => {
   return null;
 };
 
-const Chart: React.FC<ChartProps> = ({ data, logs, symbol, interval, market }) => {
+const Chart: React.FC<ChartProps> = ({ data, logs, symbol, interval, market, delayedEntryActivationTime }) => {
   const processedData = useMemo(() => {
      return data.map(d => ({
         ...d,
@@ -60,8 +61,9 @@ const Chart: React.FC<ChartProps> = ({ data, logs, symbol, interval, market }) =
      }));
   }, [data]);
 
+  // 综合标记：成交信号 + 延后开仓旗帜
   const markers = useMemo(() => {
-    return logs.map(log => {
+    const tradeMarkers = logs.map(log => {
         const logTime = log.timestamp;
         let closestCandle = null;
         for(let i = data.length - 1; i >= 0; i--) {
@@ -71,10 +73,32 @@ const Chart: React.FC<ChartProps> = ({ data, logs, symbol, interval, market }) =
         const isBuy = log.payload.action === 'buy' || log.payload.action === 'buy_to_cover';
         return {
             id: log.id, x: closestCandle.time, y: isBuy ? closestCandle.low : closestCandle.high,
-            type: isBuy ? 'buy' : 'sell', label: isBuy ? '▲' : '▼', color: isBuy ? '#10b981' : '#f43f5e'
+            type: isBuy ? 'buy' : 'sell', label: isBuy ? '▲' : '▼', color: isBuy ? '#10b981' : '#f43f5e',
+            size: 5
         };
-    }).filter(Boolean) as any[];
-  }, [logs, data]);
+    }).filter(Boolean);
+
+    // 如果开启了延后开仓，增加旗帜
+    if (delayedEntryActivationTime && delayedEntryActivationTime > 0) {
+        let activationCandle = null;
+        for(let i = data.length - 1; i >= 0; i--) {
+            if (data[i].time <= delayedEntryActivationTime) { activationCandle = data[i]; break; }
+        }
+        if (activationCandle) {
+            tradeMarkers.push({
+                id: 'delayed-flag',
+                x: activationCandle.time,
+                y: activationCandle.high + (activationCandle.high * 0.001),
+                type: 'flag',
+                label: '🚩',
+                color: '#3b82f6',
+                size: 0
+            });
+        }
+    }
+
+    return tradeMarkers as any[];
+  }, [logs, data, delayedEntryActivationTime]);
 
   const minPrice = useMemo(() => data.length > 0 ? Math.min(...data.map(d => d.low)) : 0, [data]);
   const maxPrice = useMemo(() => data.length > 0 ? Math.max(...data.map(d => d.high)) : 0, [data]);
@@ -128,8 +152,8 @@ const Chart: React.FC<ChartProps> = ({ data, logs, symbol, interval, market }) =
 
         {markers.map((m) => (
             <ReferenceDot
-                key={m.id} x={m.x} y={m.y} r={5} fill={m.color} stroke="#fff" strokeWidth={1}
-                label={{ value: m.label, position: m.type === 'buy' ? 'bottom' : 'top', fill: m.color, fontSize: 14, fontWeight: 'bold' }}
+                key={m.id} x={m.x} y={m.y} r={m.size} fill={m.size > 0 ? m.color : 'transparent'} stroke={m.size > 0 ? "#fff" : 'transparent'} strokeWidth={1}
+                label={{ value: m.label, position: m.type === 'buy' ? 'bottom' : 'top', fill: m.color, fontSize: m.type === 'flag' ? 20 : 14, fontWeight: 'bold' }}
             />
         ))}
 

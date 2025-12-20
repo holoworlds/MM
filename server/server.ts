@@ -18,7 +18,9 @@ const io = new Server(server, {
     cors: {
         origin: "*", 
         methods: ["GET", "POST"]
-    }
+    },
+    pingTimeout: 60000,
+    pingInterval: 25000
 });
 
 const PORT = 3001;
@@ -39,7 +41,6 @@ function saveSystemState() {
             FileStore.save('strategies', strategySnapshots);
         }
         FileStore.save('logs', logs);
-        // FileStore.save('system_config', systemConfig); // No system config to save anymore
     } catch (e) {
         console.error('[System] Error saving state:', e);
     }
@@ -52,7 +53,7 @@ async function initializeSystem() {
     // 0.5 Pre-warm Data (Background Collection)
     console.log(`[System] Pre-warming data for: ${PRELOAD_SYMBOLS.join(', ')}`);
     for (const symbol of PRELOAD_SYMBOLS) {
-        await dataEngine.ensureActive(symbol); 
+        dataEngine.ensureActive(symbol).catch(err => console.error(`[System] Pre-warm failed for ${symbol}`, err)); 
     }
 
     // 1. Restore Logs
@@ -69,7 +70,6 @@ async function initializeSystem() {
         
         for (const snapshot of savedSnapshots) {
             try {
-                // Force market to CRYPTO just in case old configs have US_STOCK
                 const sanitizedConfig = { 
                     ...DEFAULT_CONFIG, 
                     ...snapshot.config,
@@ -129,9 +129,9 @@ function broadcastFullState(socketId?: string) {
     if (socketId) {
         io.to(socketId).emit('full_state', fullState);
         io.to(socketId).emit('logs_update', logs);
-        // io.to(socketId).emit('system_config_update', systemConfig);
     } else {
         io.emit('full_state', fullState);
+        io.emit('logs_update', logs);
     }
 }
 
@@ -147,6 +147,12 @@ io.on('connection', (socket) => {
 
     // Send initial data
     broadcastFullState(socket.id);
+
+    // Explicit sync request
+    socket.on('cmd_sync_state', () => {
+        console.log(`[Socket] Manual sync requested by ${socket.id}`);
+        broadcastFullState(socket.id);
+    });
 
     // Strategy handlers
     socket.on('cmd_update_config', ({ id, updates }: { id: string, updates: Partial<StrategyConfig> }) => {
@@ -193,14 +199,20 @@ io.on('connection', (socket) => {
             saveSystemState();
         }
     });
+
+    socket.on('error', (err) => {
+        console.error(`[Socket] Socket error for ${socket.id}:`, err);
+    });
 });
 
 setInterval(() => {
     saveSystemState();
-}, 5000); 
+}, 60000); // Save every minute
 
 initializeSystem().then(() => {
     server.listen(PORT, () => {
         console.log(`Backend Strategy Server running on port ${PORT}`);
     });
+}).catch(err => {
+    console.error('[System] Critical failure during initialization:', err);
 });

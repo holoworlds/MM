@@ -9,7 +9,6 @@ import LogPanel from './components/LogPanel';
 import { enrichCandlesWithIndicators } from './services/indicatorService';
 
 // Determine Socket URL based on environment
-// Fix: Use type casting to 'any' to avoid TypeScript errors when ImportMeta.env is not defined in standard types
 const isProduction = (import.meta as any).env?.PROD !== false;
 
 const SERVER_URL = isProduction 
@@ -18,25 +17,28 @@ const SERVER_URL = isProduction
 
 const INITIAL_POS_STATE: PositionState = {
     direction: 'FLAT', 
+    pendingSignal: 'NONE',
+    pendingSignalSource: '',
     initialQuantity: 0,
     remainingQuantity: 0,
     entryPrice: 0, 
     highestPrice: 0, 
     lowestPrice: 0, 
     openTime: 0, 
-    tpLevelsHit: [], 
-    slLevelsHit: []
+    tpLevelsHit: new Array(4).fill(false), 
+    slLevelsHit: new Array(4).fill(false),
+    delayedEntryCurrentCount: 0,
+    lastCountedSignalTime: 0
 };
 const INITIAL_STATS: TradeStats = { dailyTradeCount: 0, lastTradeDate: '', lastActionCandleTime: 0 };
 
-// --- Mock Data Generator for Demo Mode ---
 const generateMockCandles = (count: number, startPrice: number): Candle[] => {
     const candles: Candle[] = [];
     let currentPrice = startPrice;
-    let time = Date.now() - count * 60 * 1000; // Start 'count' minutes ago
+    let time = Date.now() - count * 60 * 1000;
 
     for (let i = 0; i < count; i++) {
-        const volatility = currentPrice * 0.002; // 0.2% volatility
+        const volatility = currentPrice * 0.002;
         const change = (Math.random() - 0.5) * volatility;
         const open = currentPrice;
         const close = currentPrice + change;
@@ -59,7 +61,6 @@ const generateMockCandles = (count: number, startPrice: number): Candle[] => {
         time += 60 * 1000;
     }
 
-    // Enrich with indicators using the same service logic
     return enrichCandlesWithIndicators(candles, {
         macdFast: 12,
         macdSlow: 26,
@@ -68,7 +69,6 @@ const generateMockCandles = (count: number, startPrice: number): Candle[] => {
 };
 
 const App: React.FC = () => {
-  // Initialize with Default Strategy
   const [strategies, setStrategies] = useState<Record<string, StrategyRuntime>>({
       [DEFAULT_CONFIG.id]: {
           config: DEFAULT_CONFIG,
@@ -84,36 +84,28 @@ const App: React.FC = () => {
   const [isConnected, setIsConnected] = useState(false);
   const [isDemoMode, setIsDemoMode] = useState(false);
   const socketRef = useRef<Socket | null>(null);
-  
-  // Buffer for throttling updates
   const pendingUpdatesRef = useRef<Record<string, StrategyRuntime>>({});
 
-  // --- Socket Connection & Demo Mode Logic ---
   useEffect(() => {
-    // Robust connection options
     const socket = io(SERVER_URL, {
-        transports: ['websocket', 'polling'], // Allow fallback
-        reconnectionAttempts: 10,
-        reconnectionDelay: 2000
+        transports: ['websocket', 'polling'],
+        reconnectionAttempts: Infinity,
+        reconnectionDelay: 1000,
+        reconnectionDelayMax: 5000,
+        timeout: 20000
     } as any);
     socketRef.current = socket;
 
     socket.on('connect', () => {
-        console.log('Connected to Backend:', SERVER_URL || 'Proxy Mode');
         setIsConnected(true);
-        setIsDemoMode(false); // Disable demo mode on connection
+        setIsDemoMode(false); 
+        socket.emit('cmd_sync_state');
     });
 
     socket.on('disconnect', () => {
-        console.log('Disconnected from Backend');
         setIsConnected(false);
     });
 
-    socket.on('connect_error', (err) => {
-        console.warn('Socket Connection Error:', err.message);
-    });
-
-    // Receive Full State
     socket.on('full_state', (data: Record<string, StrategyRuntime>) => {
         setStrategies(data);
         setActiveStrategyId(prevId => {
@@ -125,12 +117,10 @@ const App: React.FC = () => {
         });
     });
     
-    // Receive Incremental Updates
     socket.on('state_update', ({ id, runtime }: { id: string, runtime: StrategyRuntime }) => {
         pendingUpdatesRef.current[id] = runtime;
     });
 
-    // Logs
     socket.on('logs_update', (allLogs: AlertLog[]) => {
         setLogs(allLogs);
     });
@@ -139,15 +129,10 @@ const App: React.FC = () => {
         setLogs(prev => [log, ...prev].slice(0, 500));
     });
 
-    // --- Demo Mode Trigger ---
-    // Increased timeout to 5 seconds to handle remote server latency
     const demoTimeout = setTimeout(() => {
-        if (!socket.connected) {
-            console.log("Backend unreachable (5s timeout). Activating Demo Mode.");
+        if (!socket.connected && !isDemoMode) {
             setIsDemoMode(true);
-            
             const mockCandles = generateMockCandles(150, 65000);
-            
             setStrategies(prev => ({
                 ...prev,
                 [DEFAULT_CONFIG.id]: {
@@ -159,7 +144,6 @@ const App: React.FC = () => {
         }
     }, 5000);
 
-    // Throttling Interval
     const throttleInterval = setInterval(() => {
         if (Object.keys(pendingUpdatesRef.current).length > 0) {
             setStrategies(prev => {
@@ -177,11 +161,8 @@ const App: React.FC = () => {
     };
   }, []); 
 
-  // --- Actions ---
   const updateStrategyConfig = (id: string, updates: Partial<StrategyConfig>) => {
       socketRef.current?.emit('cmd_update_config', { id, updates });
-      
-      // Optimistic update
       setStrategies(prev => {
           if (!prev[id]) return prev;
           return {
@@ -218,7 +199,6 @@ const App: React.FC = () => {
       socketRef.current?.emit('cmd_manual_order', { id: activeStrategyId, type });
   };
 
-  // Resizing State
   const [logPanelHeight, setLogPanelHeight] = useState<number>(200);
   const isResizingRef = useRef(false);
   
@@ -251,9 +231,6 @@ const App: React.FC = () => {
     };
   }, [handleMouseMove, stopResizing]);
 
-
-  // --- Render ---
-  
   const activeStrategy = strategies[activeStrategyId] || {
       config: DEFAULT_CONFIG,
       candles: [],
@@ -278,6 +255,7 @@ const App: React.FC = () => {
            lastPrice={activeStrategy.lastPrice} 
            onManualOrder={handleManualOrder}
            positionStatus={activeStrategy.positionState.direction}
+           allRuntimes={strategies}
         />
       </div>
 
@@ -288,7 +266,7 @@ const App: React.FC = () => {
               加密货币量化监控 - {activeStrategy.config.name} ({activeStrategy.config.symbol})
             </h1>
             <div className={`text-xs px-2 py-0.5 rounded border font-medium ${isConnected ? 'bg-emerald-100 text-emerald-700 border-emerald-200' : 'bg-amber-100 text-amber-700 border-amber-200'}`}>
-                {isConnected ? '后端在线' : isDemoMode ? '演示模式 (模拟数据)' : '连接中...'}
+                {isConnected ? '后端在线' : isDemoMode ? '演示模式' : '连接中...'}
             </div>
             {isConnected && (
                 <span className="text-xs text-slate-600 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
@@ -311,6 +289,7 @@ const App: React.FC = () => {
                 symbol={activeStrategy.config.symbol}
                 interval={activeStrategy.config.interval}
                 market={activeStrategy.config.market}
+                delayedEntryActivationTime={activeStrategy.config.delayedEntryActivationTime}
              />
           </div>
         </div>

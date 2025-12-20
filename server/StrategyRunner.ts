@@ -6,14 +6,18 @@ import { dataEngine } from "./DataEngine";
 
 const INITIAL_POS_STATE: PositionState = {
     direction: 'FLAT', 
+    pendingSignal: 'NONE',
+    pendingSignalSource: '',
     initialQuantity: 0,
     remainingQuantity: 0,
     entryPrice: 0, 
     highestPrice: 0, 
     lowestPrice: 0, 
     openTime: 0, 
-    tpLevelsHit: [], 
-    slLevelsHit: []
+    tpLevelsHit: new Array(4).fill(false), 
+    slLevelsHit: new Array(4).fill(false),
+    delayedEntryCurrentCount: 0,
+    lastCountedSignalTime: 0
 };
 
 const INITIAL_STATS: TradeStats = { 
@@ -36,8 +40,8 @@ export class StrategyRunner {
         this.runtime = {
             config: config,
             candles: [],
-            positionState: INITIAL_POS_STATE,
-            tradeStats: INITIAL_STATS,
+            positionState: { ...INITIAL_POS_STATE },
+            tradeStats: { ...INITIAL_STATS },
             lastPrice: 0
         };
     }
@@ -46,7 +50,6 @@ export class StrategyRunner {
         if (this.isRunning) return;
         this.isRunning = true;
         this.isWarmupPhase = true;
-
         this.subscriptionId++;
         const currentSid = this.subscriptionId;
 
@@ -70,13 +73,20 @@ export class StrategyRunner {
     public updateConfig(newConfig: StrategyConfig) {
         const oldSymbol = this.runtime.config.symbol;
         const oldInterval = this.runtime.config.interval;
-        const wasActive = this.runtime.config.isActive;
         
-        this.runtime.config = newConfig;
-
-        if (newConfig.isActive && !wasActive) {
-            this.isWarmupPhase = true;
+        // 特殊处理：如果延后开仓功能刚开启，重置计数并设置激活时间
+        if (newConfig.useDelayedEntry && !this.runtime.config.useDelayedEntry) {
+            this.runtime.positionState.delayedEntryCurrentCount = 0;
+            this.runtime.positionState.lastCountedSignalTime = 0;
+            // 设置激活时间为当前 K 线的时间点（或稍微提前），确保“当前”K线能被计入
+            const lastCandle = this.runtime.candles[this.runtime.candles.length - 1];
+            newConfig.delayedEntryActivationTime = lastCandle ? lastCandle.time : Date.now();
+        } else if (!newConfig.useDelayedEntry) {
+            newConfig.delayedEntryActivationTime = 0;
+            this.runtime.positionState.delayedEntryCurrentCount = 0;
         }
+
+        this.runtime.config = newConfig;
 
         if (newConfig.symbol !== oldSymbol || newConfig.interval !== oldInterval) {
             this.stop();
@@ -88,48 +98,21 @@ export class StrategyRunner {
         }
     }
 
+    public restoreState(position: PositionState, stats: TradeStats) {
+        this.runtime.positionState = { 
+            ...INITIAL_POS_STATE,
+            ...position, 
+            pendingSignal: position.pendingSignal || 'NONE' 
+        };
+        this.runtime.tradeStats = stats;
+    }
+
     public getSnapshot() {
         return {
             config: this.runtime.config,
             positionState: this.runtime.positionState,
             tradeStats: this.runtime.tradeStats
         };
-    }
-
-    public restoreState(position: PositionState, stats: TradeStats) {
-        this.runtime.positionState = position;
-        this.runtime.tradeStats = stats;
-    }
-
-    public handleManualOrder(type: 'LONG' | 'SHORT' | 'FLAT') {
-        const price = this.runtime.lastPrice;
-        if (price === 0) return;
-
-        const currentCandleTime = this.runtime.candles.length > 0 ? this.runtime.candles[this.runtime.candles.length - 1].time : 0;
-        let quantity = 0;
-
-        if (type === 'LONG' || type === 'SHORT') quantity = this.runtime.config.tradeAmount / price;
-        if (type === 'FLAT') quantity = this.runtime.positionState.remainingQuantity;
-
-        if (type === 'FLAT') {
-            this.runtime.positionState = INITIAL_POS_STATE;
-        } else {
-            this.runtime.positionState = {
-                direction: type, initialQuantity: quantity, remainingQuantity: quantity,
-                entryPrice: price, highestPrice: type === 'LONG' ? price : 0, lowestPrice: type === 'SHORT' ? price : 0,
-                openTime: Date.now(), tpLevelsHit: [], slLevelsHit: []
-            };
-            this.runtime.tradeStats.dailyTradeCount += 1;
-        }
-
-        if (currentCandleTime > 0) this.runtime.tradeStats.lastActionCandleTime = currentCandleTime;
-
-        const action = type === 'LONG' ? 'buy' : type === 'SHORT' ? 'sell' : (this.runtime.positionState.direction === 'LONG' ? 'sell' : 'buy');
-        const pos = type === 'FLAT' ? 'flat' : type.toLowerCase();
-        
-        const payload = this.generatePayload(action, pos, quantity, price, '手动操作');
-        this.sendWebhook(payload, true);
-        this.emitUpdate();
     }
 
     private handleDataUpdate(candles: Candle[]) {
@@ -150,48 +133,54 @@ export class StrategyRunner {
             this.isWarmupPhase = false;
         }
 
-        // CRITICAL: Update local state immediately before processing webhooks
         this.runtime.positionState = result.newPositionState;
         this.runtime.tradeStats = result.newTradeStats;
 
         if (result.actions.length > 0) {
-            // Immediate broadcast of state change to prevent double-firing in UI
-            this.emitUpdate();
-            
-            result.actions.forEach(action => {
-                this.sendWebhook(action);
-            });
+            this.emitUpdate(); 
+            result.actions.forEach(action => this.sendWebhook(action));
         } else {
-            // Regular update for price movements
             this.emitUpdate();
         }
     }
 
-    private generatePayload(action: string, position: string, quantity: number, price: number, msg: string): any {
-        return {
-            secret: this.runtime.config.secret || '',
-            action, position, symbol: this.runtime.config.symbol,
-            quantity: quantity.toString(), trade_amount: quantity * price,
-            leverage: 5, timestamp: new Date().toISOString(), tv_exchange: "BINANCE",
-            strategy_name: this.runtime.config.name, tp_level: msg,
-            execution_price: price, execution_quantity: quantity
-        };
+    public handleManualOrder(type: 'LONG' | 'SHORT' | 'FLAT') {
+        const price = this.runtime.lastPrice;
+        if (price === 0) return;
+        const qty = this.runtime.config.tradeAmount / price;
+        
+        if (type === 'FLAT') {
+            this.runtime.positionState = { ...INITIAL_POS_STATE };
+        } else {
+            this.runtime.positionState = {
+                ...INITIAL_POS_STATE,
+                direction: type,
+                pendingSignal: 'NONE', 
+                initialQuantity: qty,
+                remainingQuantity: qty,
+                entryPrice: price,
+                openTime: Date.now()
+            };
+            this.runtime.tradeStats.dailyTradeCount++;
+        }
+        this.emitUpdate();
     }
 
-    private async sendWebhook(payload: any, isManual: boolean = false) {
+    private async sendWebhook(payload: any) {
         const logEntry = {
             id: Math.random().toString(36).substr(2, 9),
             strategyId: this.runtime.config.id,
             strategyName: this.runtime.config.name,
             timestamp: Date.now(),
-            payload, status: 'sent', type: isManual ? 'Manual' : 'Strategy'
+            payload, status: 'sent', type: 'Strategy'
         };
         this.onLog(logEntry);
-
-        const url = this.runtime.config.webhookUrl;
-        if (url) {
-            fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
-            .catch(e => console.error(`[Webhook] Failed`, e));
+        if (this.runtime.config.webhookUrl) {
+            fetch(this.runtime.config.webhookUrl, { 
+                method: 'POST', 
+                headers: { 'Content-Type': 'application/json' }, 
+                body: JSON.stringify(payload) 
+            }).catch(e => console.error("[Webhook] Error", e));
         }
     }
 

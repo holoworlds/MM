@@ -16,7 +16,6 @@ export interface Candle {
   close: number;
   volume: number;
   isClosed: boolean;
-  // Indicators
   ema7?: number;
   ema25?: number;
   ema99?: number;
@@ -51,45 +50,25 @@ export interface AlertLog {
   type: string;
 }
 
-// --- System Configuration ---
-// (Empty as Longbridge config is removed)
 export interface SystemConfig {}
-
-// --- Strategy Configuration Interfaces ---
 
 export interface StrategyConfig {
   id: string;
   name: string;
   isActive: boolean;
-
-  // General
   market: MarketType;
   symbol: SymbolType;
   interval: IntervalType;
-  
-  // Sizing
   tradeAmount: number;
-  // tradeQuantity removed (was for stocks)
-
   webhookUrl: string;
   secret: string;
-
-  // Signal Trigger Mode
   triggerOnClose: boolean;
-
-  // Manual Control
   manualTakeover: boolean;
   takeoverDirection: 'LONG' | 'SHORT' | 'FLAT';
   takeoverQuantity: number;
   takeoverTimestamp: string;
-
-  // Trend Filter
   trendFilterBlockShort: boolean;
   trendFilterBlockLong: boolean;
-
-  // --- SIGNALS ---
-
-  // 1. MACD
   useMACD: boolean;
   macdFast: number;
   macdSlow: number;
@@ -98,69 +77,52 @@ export interface StrategyConfig {
   macdShort: boolean;
   macdExitLong: boolean;
   macdExitShort: boolean;
-
-  // 2. Price Return to EMA7
   usePriceReturnEMA7: boolean;
   priceReturnDist: number;
-
-  // 3. EMA 7/25
-  useEMA7_25: boolean;
+  useEMA7_25: boolean; 
   ema7_25_Long: boolean;
   ema7_25_Short: boolean;
   ema7_25_ExitLong: boolean;
   ema7_25_ExitShort: boolean;
-
-  // 4. EMA 7/99
   useEMA7_99: boolean;
   ema7_99_Long: boolean;
   ema7_99_Short: boolean;
   ema7_99_ExitLong: boolean;
   ema7_99_ExitShort: boolean;
-
-  // 5. EMA 25/99
   useEMA25_99: boolean;
   ema25_99_Long: boolean;
   ema25_99_Short: boolean;
   ema25_99_ExitLong: boolean;
   ema25_99_ExitShort: boolean;
-
-  // 6. EMA Double (7 & 25 vs 99)
   useEMADouble: boolean; 
   emaDoubleLong: boolean;
   emaDoubleShort: boolean;
   emaDoubleExitLong: boolean;
   emaDoubleExitShort: boolean;
-
-  // --- EXITS ---
-
-  // Trailing Stop
   useTrailingStop: boolean;
   trailActivation: number; 
   trailDistance: number; 
-
-  // Fixed TP/SL
   useFixedTPSL: boolean;
   takeProfitPct: number;
   stopLossPct: number;
-
-  // Multi Level TP/SL (4 Levels)
   useMultiTPSL: boolean;
   tpLevels: { pct: number; qtyPct: number; active: boolean }[];
   slLevels: { pct: number; qtyPct: number; active: boolean }[];
-
-  // Reverse
   useReverse: boolean;
   reverseLongToShort: boolean;
   reverseShortToLong: boolean;
-
-  // Risk / Limits
   maxDailyTrades: number;
+  // 新增：延后开仓功能
+  useDelayedEntry: boolean;
+  delayedEntryTargetCount: number;
+  delayedEntryActivationTime: number; 
+  delayedEntryType: 'LONG' | 'SHORT' | 'BOTH'; // 新增：延后方向选择
 }
-
-// --- Internal State ---
 
 export interface PositionState {
   direction: 'LONG' | 'SHORT' | 'FLAT';
+  pendingSignal: 'LONG' | 'SHORT' | 'NONE'; 
+  pendingSignalSource?: string;
   initialQuantity: number; 
   remainingQuantity: number; 
   entryPrice: number;
@@ -169,6 +131,9 @@ export interface PositionState {
   openTime: number;
   tpLevelsHit: boolean[]; 
   slLevelsHit: boolean[]; 
+  // 新增：延后开仓计数
+  delayedEntryCurrentCount: number;
+  lastCountedSignalTime: number; 
 }
 
 export interface TradeStats {
