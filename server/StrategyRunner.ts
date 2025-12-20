@@ -78,12 +78,24 @@ export class StrategyRunner {
         if (newConfig.useDelayedEntry && !this.runtime.config.useDelayedEntry) {
             this.runtime.positionState.delayedEntryCurrentCount = 0;
             this.runtime.positionState.lastCountedSignalTime = 0;
-            // 设置激活时间为当前 K 线的时间点（或稍微提前），确保“当前”K线能被计入
+            
+            // 修正：将激活时间对齐到当前最后一根K线的时间戳，确保 inclusive 判定生效
             const lastCandle = this.runtime.candles[this.runtime.candles.length - 1];
             newConfig.delayedEntryActivationTime = lastCandle ? lastCandle.time : Date.now();
         } else if (!newConfig.useDelayedEntry) {
             newConfig.delayedEntryActivationTime = 0;
             this.runtime.positionState.delayedEntryCurrentCount = 0;
+        }
+
+        // 手动接管同步：如果 UI 开启手动接管，尝试同步 UI 传入的仓位状态到 runtime
+        if (newConfig.manualTakeover) {
+            this.runtime.positionState.direction = newConfig.takeoverDirection;
+            // 只有当方向不为 FLAT 时，初始化一些基础值防止报错
+            if (newConfig.takeoverDirection !== 'FLAT' && this.runtime.positionState.entryPrice === 0) {
+                this.runtime.positionState.entryPrice = this.runtime.lastPrice;
+                this.runtime.positionState.initialQuantity = newConfig.takeoverQuantity;
+                this.runtime.positionState.remainingQuantity = newConfig.takeoverQuantity;
+            }
         }
 
         this.runtime.config = newConfig;
@@ -149,6 +161,21 @@ export class StrategyRunner {
         if (price === 0) return;
         const qty = this.runtime.config.tradeAmount / price;
         
+        // 发送成交记录
+        const payload: WebhookPayload = {
+            secret: this.runtime.config.secret,
+            action: type === 'LONG' ? 'buy' : type === 'SHORT' ? 'sell' : 'flat',
+            position: type.toLowerCase(),
+            symbol: this.runtime.config.symbol,
+            quantity: qty.toFixed(8),
+            trade_amount: qty * price,
+            timestamp: new Date().toISOString(),
+            strategy_name: this.runtime.config.name,
+            tp_level: '手动下单 (Manual Order)',
+            execution_price: price,
+            execution_quantity: qty
+        };
+
         if (type === 'FLAT') {
             this.runtime.positionState = { ...INITIAL_POS_STATE };
         } else {
@@ -163,6 +190,8 @@ export class StrategyRunner {
             };
             this.runtime.tradeStats.dailyTradeCount++;
         }
+        
+        this.sendWebhook(payload);
         this.emitUpdate();
     }
 
@@ -172,7 +201,7 @@ export class StrategyRunner {
             strategyId: this.runtime.config.id,
             strategyName: this.runtime.config.name,
             timestamp: Date.now(),
-            payload, status: 'sent', type: 'Strategy'
+            payload, status: 'sent', type: payload.tp_level?.includes('手动') ? 'Manual' : 'Strategy'
         };
         this.onLog(logEntry);
         if (this.runtime.config.webhookUrl) {

@@ -1,6 +1,7 @@
 
 import { Candle, StrategyConfig, PositionState, TradeStats, WebhookPayload } from "../types";
 
+// --- 基础辅助函数 ---
 const crossOver = (currA: number, currB: number, prevA: number, prevB: number) => prevA <= prevB && currA > currB;
 const crossUnder = (currA: number, currB: number, prevA: number, prevB: number) => prevA >= prevB && currA < currB;
 
@@ -10,6 +11,9 @@ export interface StrategyResult {
   actions: WebhookPayload[];
 }
 
+/**
+ * 核心策略引擎：采用“信号-闸门-执行”三段式架构
+ */
 export const evaluateStrategy = (
   candles: Candle[],
   config: StrategyConfig,
@@ -30,185 +34,285 @@ export const evaluateStrategy = (
   const dateKey = now.toISOString().split('T')[0];
   const currentCandleTime = last.time;
 
+  // 1. 基础状态更新
   if (nextStats.lastTradeDate !== dateKey) {
     nextStats.dailyTradeCount = 0;
     nextStats.lastTradeDate = dateKey;
   }
 
   if (nextPos.direction === 'LONG') {
-      nextPos.highestPrice = Math.max(nextPos.highestPrice || last.close, last.high);
+    nextPos.highestPrice = Math.max(nextPos.highestPrice || last.close, last.high);
   } else if (nextPos.direction === 'SHORT') {
-      if (nextPos.lowestPrice === 0) nextPos.lowestPrice = last.low;
-      nextPos.lowestPrice = Math.min(nextPos.lowestPrice, last.low);
+    if (nextPos.lowestPrice === 0) nextPos.lowestPrice = last.low;
+    nextPos.lowestPrice = Math.min(nextPos.lowestPrice, last.low);
   }
 
+  // ---------------------------------------------------------
+  // 第一层：闸门预检 (Gate Layer - Pre-check)
+  // ---------------------------------------------------------
+
+  // A. 收盘触发检查
   const isSignalTrigger = config.triggerOnClose ? last.isClosed : true;
   if (!isSignalTrigger) {
-      return { newPositionState: nextPos, newTradeStats: nextStats, actions };
+    return { newPositionState: nextPos, newTradeStats: nextStats, actions };
+  }
+
+  // B. 每日限额与重复触发检查
+  const canTrade = nextStats.dailyTradeCount < config.maxDailyTrades && 
+                   tradeStats.lastActionCandleTime !== currentCandleTime;
+
+  // C. 手动接管检查：如果开启手动接管，彻底屏蔽自动开平仓逻辑
+  if (config.manualTakeover) {
+    // 这里仅同步 UI 设置的持仓状态到 runtime 状态，不执行自动逻辑
+    // 手动订单通过 StrategyRunner.handleManualOrder 处理
+    return { newPositionState: nextPos, newTradeStats: nextStats, actions };
   }
 
   if (last.ema7 === undefined || last.ema25 === undefined || last.ema99 === undefined) {
     return { newPositionState: nextPos, newTradeStats: nextStats, actions };
   }
 
-  const canTrade = nextStats.dailyTradeCount < config.maxDailyTrades && 
-                   tradeStats.lastActionCandleTime !== currentCandleTime;
-
+  // ---------------------------------------------------------
+  // 第二层：平仓逻辑 (Exit Execution Layer)
+  // ---------------------------------------------------------
   let exitReason = '';
-  let entryReason = '';
-  let intendedDirection: 'LONG' | 'SHORT' | 'NONE' = 'NONE';
   let exitQuantity = 0;
 
-  if (!config.manualTakeover) {
-      
-      // --- A. 平仓逻辑 ---
-      if (nextPos.direction !== 'FLAT') {
-          const isLong = nextPos.direction === 'LONG';
-          const pnlPct = isLong 
-              ? (last.close - nextPos.entryPrice) / nextPos.entryPrice * 100
-              : (nextPos.entryPrice - last.close) / nextPos.entryPrice * 100;
+  if (nextPos.direction !== 'FLAT') {
+    const isLong = nextPos.direction === 'LONG';
+    const pnlPct = isLong 
+        ? (last.close - nextPos.entryPrice) / nextPos.entryPrice * 100
+        : (nextPos.entryPrice - last.close) / nextPos.entryPrice * 100;
 
-          if (config.useFixedTPSL) {
-              if (pnlPct >= config.takeProfitPct) exitReason = `固定止盈(${config.takeProfitPct}%)`;
-              else if (pnlPct <= -config.stopLossPct) exitReason = `固定止损(-${config.stopLossPct}%)`;
-          }
+    // 1. 固定止盈止损
+    if (config.useFixedTPSL) {
+        if (pnlPct >= config.takeProfitPct) exitReason = `固定止盈(${config.takeProfitPct}%)`;
+        else if (pnlPct <= -config.stopLossPct) exitReason = `固定止损(-${config.stopLossPct}%)`;
+    }
 
-          if (!exitReason && config.useMultiTPSL) {
-              for (let i = 0; i < config.tpLevels.length; i++) {
-                  const tp = config.tpLevels[i];
-                  if (tp.active && !nextPos.tpLevelsHit[i]) {
-                      const trigger = isLong ? (pnlPct >= tp.pct) : (pnlPct <= -tp.pct);
-                      if (trigger) {
-                          exitReason = `多级止盈#${i+1}(${tp.pct}%)`;
-                          exitQuantity = (nextPos.initialQuantity * tp.qtyPct) / 100;
-                          nextPos.tpLevelsHit[i] = true;
-                          break;
-                      }
-                  }
-              }
-          }
+    // 2. 多级止盈
+    if (!exitReason && config.useMultiTPSL) {
+        for (let i = 0; i < config.tpLevels.length; i++) {
+            const tp = config.tpLevels[i];
+            if (tp.active && !nextPos.tpLevelsHit[i]) {
+                const trigger = isLong ? (pnlPct >= tp.pct) : (pnlPct <= -tp.pct);
+                if (trigger) {
+                    exitReason = `多级止盈#${i+1}(${tp.pct}%)`;
+                    exitQuantity = (nextPos.initialQuantity * tp.qtyPct) / 100;
+                    nextPos.tpLevelsHit[i] = true;
+                    break;
+                }
+            }
+        }
+    }
 
-          if (!exitReason && config.useTrailingStop) {
-              const activationReached = isLong 
-                  ? (nextPos.highestPrice - nextPos.entryPrice) / nextPos.entryPrice * 100 >= config.trailActivation
-                  : (nextPos.entryPrice - nextPos.lowestPrice) / nextPos.entryPrice * 100 >= config.trailActivation;
-              
-              if (activationReached) {
-                  const dropFromPeak = isLong
-                      ? (nextPos.highestPrice - last.close) / nextPos.highestPrice * 100
-                      : (last.close - nextPos.lowestPrice) / nextPos.lowestPrice * 100;
-                  if (dropFromPeak >= config.trailDistance) exitReason = `追踪止盈(回撤${config.trailDistance}%)`;
-              }
-          }
+    // 3. 追踪止盈
+    if (!exitReason && config.useTrailingStop) {
+        const activationReached = isLong 
+            ? (nextPos.highestPrice - nextPos.entryPrice) / nextPos.entryPrice * 100 >= config.trailActivation
+            : (nextPos.entryPrice - nextPos.lowestPrice) / nextPos.entryPrice * 100 >= config.trailActivation;
+        
+        if (activationReached) {
+            const dropFromPeak = isLong
+                ? (nextPos.highestPrice - last.close) / nextPos.highestPrice * 100
+                : (last.close - nextPos.lowestPrice) / nextPos.lowestPrice * 100;
+            if (dropFromPeak >= config.trailDistance) exitReason = `追踪止盈(回撤${config.trailDistance}%)`;
+        }
+    }
 
-          if (!exitReason) {
-              if (isLong) {
-                  if (config.useEMA7_25 && config.ema7_25_ExitLong && crossUnder(last.ema7, last.ema25, prev.ema7!, prev.ema25!)) exitReason = 'EMA死叉平多';
-                  else if (config.useEMA7_99 && config.ema7_99_ExitLong && crossUnder(last.ema7, last.ema99, prev.ema7!, prev.ema99!)) exitReason = 'EMA7/99死叉平多';
-                  else if (config.useEMA25_99 && config.ema25_99_ExitLong && crossUnder(last.ema25, last.ema99, prev.ema25!, prev.ema99!)) exitReason = 'EMA25/99死叉平多';
-              } else {
-                  if (config.useEMA7_25 && config.ema7_25_ExitShort && crossOver(last.ema7, last.ema25, prev.ema7!, prev.ema25!)) exitReason = 'EMA金叉平空';
-                  else if (config.useEMA7_99 && config.ema7_99_ExitShort && crossOver(last.ema7, last.ema99, prev.ema7!, prev.ema99!)) exitReason = 'EMA7/99金叉平空';
-                  else if (config.useEMA25_99 && config.ema25_99_ExitShort && crossOver(last.ema25, last.ema99, prev.ema25!, prev.ema99!)) exitReason = 'EMA25/99金叉平空';
-              }
-          }
+    // 4. 指标反转平仓 (组合判断)
+    if (!exitReason) {
+        if (isLong) {
+            if (config.useEMA7_25 && config.ema7_25_ExitLong && crossUnder(last.ema7, last.ema25, prev.ema7!, prev.ema25!)) exitReason = 'EMA7/25死叉平多';
+            else if (config.useEMA7_99 && config.ema7_99_ExitLong && crossUnder(last.ema7, last.ema99, prev.ema7!, prev.ema99!)) exitReason = 'EMA7/99死叉平多';
+            else if (config.useEMA25_99 && config.ema25_99_ExitLong && crossUnder(last.ema25, last.ema99, prev.ema25!, prev.ema99!)) exitReason = 'EMA25/99死叉平多';
+            else if (config.useEMADouble && config.emaDoubleExitLong && (last.ema7 < last.ema99 || last.ema25 < last.ema99)) exitReason = '双EMA跌破过滤线平多';
+            else if (config.useMACD && config.macdExitLong && last.macdLine! < last.macdSignal!) exitReason = 'MACD死叉平多';
+        } else {
+            if (config.useEMA7_25 && config.ema7_25_ExitShort && crossOver(last.ema7, last.ema25, prev.ema7!, prev.ema25!)) exitReason = 'EMA7/25金叉平空';
+            else if (config.useEMA7_99 && config.ema7_99_ExitShort && crossOver(last.ema7, last.ema99, prev.ema7!, prev.ema99!)) exitReason = 'EMA7/99金叉平空';
+            else if (config.useEMA25_99 && config.ema25_99_ExitShort && crossOver(last.ema25, last.ema99, prev.ema25!, prev.ema99!)) exitReason = 'EMA25/99金叉平空';
+            else if (config.useEMADouble && config.emaDoubleExitShort && (last.ema7 > last.ema99 || last.ema25 > last.ema99)) exitReason = '双EMA上破过滤线平空';
+            else if (config.useMACD && config.macdExitShort && last.macdLine! > last.macdSignal!) exitReason = 'MACD金叉平空';
+        }
+    }
 
-          if (exitReason) {
-              const isFullExit = exitQuantity === 0 || exitQuantity >= nextPos.remainingQuantity;
-              const actualQty = isFullExit ? nextPos.remainingQuantity : exitQuantity;
-              actions.push({
-                secret: config.secret,
-                action: isLong ? 'sell' : 'buy',
-                position: isFullExit ? 'flat' : isLong ? 'long' : 'short',
-                symbol: config.symbol,
-                quantity: actualQty.toFixed(8),
-                trade_amount: actualQty * last.close,
-                timestamp: now.toISOString(),
-                strategy_name: config.name,
-                tp_level: exitReason,
-                execution_price: last.close,
-                execution_quantity: actualQty
-              });
-              if (isFullExit) {
-                  nextPos = { 
-                    ...nextPos, direction: 'FLAT', initialQuantity: 0, remainingQuantity: 0, 
-                    entryPrice: 0, highestPrice: 0, lowestPrice: 0, openTime: 0, 
-                    tpLevelsHit: new Array(4).fill(false), slLevelsHit: new Array(4).fill(false),
-                    delayedEntryCurrentCount: 0, lastCountedSignalTime: 0
-                  };
-                  nextStats.lastActionCandleTime = currentCandleTime;
-              } else {
-                  nextPos.remainingQuantity -= actualQty;
-              }
-          }
+    if (exitReason) {
+        const isFullExit = exitQuantity === 0 || exitQuantity >= nextPos.remainingQuantity;
+        const actualQty = isFullExit ? nextPos.remainingQuantity : exitQuantity;
+        actions.push({
+          secret: config.secret,
+          action: isLong ? 'sell' : 'buy',
+          position: isFullExit ? 'flat' : isLong ? 'long' : 'short',
+          symbol: config.symbol,
+          quantity: actualQty.toFixed(8),
+          trade_amount: actualQty * last.close,
+          timestamp: now.toISOString(),
+          strategy_name: config.name,
+          tp_level: exitReason,
+          execution_price: last.close,
+          execution_quantity: actualQty
+        });
+
+        if (isFullExit) {
+            // 反手逻辑检查 (Reverse)
+            let isReversed = false;
+            if (config.useReverse) {
+                if (isLong && config.reverseLongToShort) {
+                    // 这里不直接开仓，而是标记，由下一轮开仓逻辑捕获或在这里直接处理
+                }
+            }
+
+            nextPos = { 
+              ...nextPos, direction: 'FLAT', initialQuantity: 0, remainingQuantity: 0, 
+              entryPrice: 0, highestPrice: 0, lowestPrice: 0, openTime: 0, 
+              tpLevelsHit: new Array(4).fill(false), slLevelsHit: new Array(4).fill(false),
+              pendingSignal: 'NONE' // 平仓时清空所有挂起信号
+            };
+            nextStats.lastActionCandleTime = currentCandleTime;
+            
+            // 如果是完全平仓，本根K线平仓后通常不再允许立即在同一方向开仓，除非是反手
+        } else {
+            nextPos.remainingQuantity -= actualQty;
+        }
+    }
+  }
+
+  // ---------------------------------------------------------
+  // 第三层：信号产生层 (Signal Layer)
+  // ---------------------------------------------------------
+  let detectedDir: 'LONG' | 'SHORT' | 'NONE' = 'NONE';
+  let detectedReason = '';
+
+  if (nextPos.direction === 'FLAT' && canTrade) {
+      // EMA 7/25 交叉
+      if (config.useEMA7_25) {
+          if (config.ema7_25_Long && crossOver(last.ema7, last.ema25, prev.ema7!, prev.ema25!)) { detectedDir = 'LONG'; detectedReason = 'EMA7/25金叉'; }
+          else if (config.ema7_25_Short && crossUnder(last.ema7, last.ema25, prev.ema7!, prev.ema25!)) { detectedDir = 'SHORT'; detectedReason = 'EMA7/25死叉'; }
       }
+      // EMA 7/99 交叉
+      if (detectedDir === 'NONE' && config.useEMA7_99) {
+          if (config.ema7_99_Long && crossOver(last.ema7, last.ema99, prev.ema7!, prev.ema99!)) { detectedDir = 'LONG'; detectedReason = 'EMA7/99金叉'; }
+          else if (detectedDir === 'NONE' && config.ema7_99_Short && crossUnder(last.ema7, last.ema99, prev.ema7!, prev.ema99!)) { detectedDir = 'SHORT'; detectedReason = 'EMA7/99死叉'; }
+      }
+      // EMA 25/99 交叉
+      if (detectedDir === 'NONE' && config.useEMA25_99) {
+          if (config.ema25_99_Long && crossOver(last.ema25, last.ema99, prev.ema25!, prev.ema99!)) { detectedDir = 'LONG'; detectedReason = 'EMA25/99金叉'; }
+          else if (detectedDir === 'NONE' && config.ema25_99_Short && crossUnder(last.ema25, last.ema99, prev.ema25!, prev.ema99!)) { detectedDir = 'SHORT'; detectedReason = 'EMA25/99死叉'; }
+      }
+      // MACD 交叉
+      if (detectedDir === 'NONE' && config.useMACD) {
+          if (config.macdLong && crossOver(last.macdLine!, last.macdSignal!, prev.macdLine!, prev.macdSignal!)) { detectedDir = 'LONG'; detectedReason = 'MACD金叉'; }
+          else if (detectedDir === 'NONE' && config.macdShort && crossUnder(last.macdLine!, last.macdSignal!, prev.macdLine!, prev.macdSignal!)) { detectedDir = 'SHORT'; detectedReason = 'MACD死叉'; }
+      }
+  }
 
-      // --- B. 常规开仓逻辑 ---
-      if (canTrade && nextPos.direction === 'FLAT' && intendedDirection === 'NONE') {
-          let rawDirection: 'LONG' | 'SHORT' | 'NONE' = 'NONE';
-          let rawReason = '';
+  // ---------------------------------------------------------
+  // 第四层：开仓闸门层 (Entry Gate Layer)
+  // ---------------------------------------------------------
+  
+  // 闸门 1: 趋势过滤 (Trend Filter)
+  if (detectedDir === 'LONG' && config.trendFilterBlockLong) {
+      const isTrendBullish = last.ema7 > last.ema25 && last.ema25 > last.ema99;
+      if (!isTrendBullish) { detectedDir = 'NONE'; }
+  }
+  if (detectedDir === 'SHORT' && config.trendFilterBlockShort) {
+      const isTrendBearish = last.ema7 < last.ema25 && last.ema25 < last.ema99;
+      if (!isTrendBearish) { detectedDir = 'NONE'; }
+  }
 
-          // 1. 信号检测 (EMA 组合)
-          if (config.useEMA7_25) {
-              if (config.ema7_25_Long && crossOver(last.ema7, last.ema25, prev.ema7!, prev.ema25!)) { rawDirection = 'LONG'; rawReason = 'EMA金叉(7/25)'; }
-              else if (config.ema7_25_Short && crossUnder(last.ema7, last.ema25, prev.ema7!, prev.ema25!)) { rawDirection = 'SHORT'; rawReason = 'EMA死叉(7/25)'; }
+  // 闸门 2: 延后开仓计数器 (Delayed Entry Counter)
+  // 此逻辑必须在“新信号”产生的时刻执行
+  if (detectedDir !== 'NONE' && config.useDelayedEntry) {
+      const isTypeMatch = config.delayedEntryType === 'BOTH' || 
+                         (config.delayedEntryType === 'LONG' && detectedDir === 'LONG') ||
+                         (config.delayedEntryType === 'SHORT' && detectedDir === 'SHORT');
+      
+      if (last.time >= config.delayedEntryActivationTime && isTypeMatch) {
+          if (nextPos.lastCountedSignalTime !== last.time) {
+              nextPos.delayedEntryCurrentCount++;
+              nextPos.lastCountedSignalTime = last.time;
           }
-          if (rawDirection === 'NONE' && config.useEMA7_99) {
-              if (config.ema7_99_Long && crossOver(last.ema7, last.ema99, prev.ema7!, prev.ema99!)) { rawDirection = 'LONG'; rawReason = 'EMA金叉(7/99)'; }
-              else if (config.ema7_99_Short && crossUnder(last.ema7, last.ema99, prev.ema7!, prev.ema99!)) { rawDirection = 'SHORT'; rawReason = 'EMA死叉(7/99)'; }
+          
+          if (nextPos.delayedEntryCurrentCount < config.delayedEntryTargetCount) {
+              // 计数未达标，拦截信号
+              detectedDir = 'NONE';
+          } else {
+              detectedReason = `[延后#${nextPos.delayedEntryCurrentCount}] ${detectedReason}`;
           }
-          if (rawDirection === 'NONE' && config.useEMA25_99) {
-              if (config.ema25_99_Long && crossOver(last.ema25, last.ema99, prev.ema25!, prev.ema99!)) { rawDirection = 'LONG'; rawReason = 'EMA金叉(25/99)'; }
-              else if (config.ema25_99_Short && crossUnder(last.ema25, last.ema99, prev.ema25!, prev.ema99!)) { rawDirection = 'SHORT'; rawReason = 'EMA死叉(25/99)'; }
-          }
+      } else {
+          // 不匹配方向或未激活，拦截
+          detectedDir = 'NONE';
+      }
+  }
 
-          // 2. 信号处理 (包含延后逻辑)
-          if (rawDirection !== 'NONE') {
-              if (config.useDelayedEntry) {
-                  const isMatch = config.delayedEntryType === 'BOTH' || 
-                                (config.delayedEntryType === 'LONG' && rawDirection === 'LONG') ||
-                                (config.delayedEntryType === 'SHORT' && rawDirection === 'SHORT');
-                  
-                  // 重要：确保 activationTime 是包含性的 (inclusive)
-                  if (last.time >= config.delayedEntryActivationTime && isMatch) {
-                      // 仅在新的信号周期累加计数
-                      if (nextPos.lastCountedSignalTime !== last.time) {
-                          nextPos.delayedEntryCurrentCount++;
-                          nextPos.lastCountedSignalTime = last.time;
-                      }
-                      
-                      // N=1 或 达到目标值，立即触发
-                      if (nextPos.delayedEntryCurrentCount >= config.delayedEntryTargetCount) {
-                          intendedDirection = rawDirection;
-                          entryReason = `延后触发#${nextPos.delayedEntryCurrentCount}: ${rawReason}`;
-                      }
-                  }
-              } else {
-                  // 无延迟直接执行
-                  intendedDirection = rawDirection;
-                  entryReason = rawReason;
-              }
+  // 闸门 3: EMA7 价格回归状态机 (Price Return State Machine)
+  // 如果产生了信号（且通过了延后计数），检查是否需要等待回归
+  if (detectedDir !== 'NONE') {
+      if (config.usePriceReturnEMA7) {
+          const distPct = Math.abs(last.close - last.ema7) / last.ema7 * 100;
+          if (distPct > config.priceReturnDist) {
+              // 价格太远，进入挂起状态
+              nextPos.pendingSignal = detectedDir;
+              nextPos.pendingSignalSource = detectedReason;
+              detectedDir = 'NONE'; // 拦截当前即时开仓
           }
       }
   }
 
-  // --- C. 执行最终开仓指令 ---
-  if (intendedDirection !== 'NONE') {
+  // 闸门 4: 挂起信号的释放 (Release Pending Signal)
+  if (nextPos.pendingSignal !== 'NONE' && detectedDir === 'NONE') {
+      const distPct = Math.abs(last.close - last.ema7) / last.ema7 * 100;
+      if (distPct <= config.priceReturnDist) {
+          // 价格回归，释放信号
+          detectedDir = nextPos.pendingSignal;
+          detectedReason = `[回归确认] ${nextPos.pendingSignalSource}`;
+          nextPos.pendingSignal = 'NONE';
+          nextPos.pendingSignalSource = '';
+      } else {
+          // 检查挂起信号是否依然有效（趋势是否反转）
+          const isInvalid = (nextPos.pendingSignal === 'LONG' && last.ema7 < last.ema25) || 
+                            (nextPos.pendingSignal === 'SHORT' && last.ema7 > last.ema25);
+          if (isInvalid) {
+              nextPos.pendingSignal = 'NONE';
+          }
+      }
+  }
+
+  // ---------------------------------------------------------
+  // 第五层：最终执行层 (Final Execution Layer)
+  // ---------------------------------------------------------
+  if (detectedDir !== 'NONE') {
       const qty = config.tradeAmount / last.close;
       if (qty > 0) {
           actions.push({
-            secret: config.secret, action: intendedDirection === 'LONG' ? 'buy' : 'sell',
-            position: intendedDirection.toLowerCase(), symbol: config.symbol,
-            quantity: qty.toFixed(8), trade_amount: qty * last.close,
-            timestamp: now.toISOString(), strategy_name: config.name,
-            tp_level: entryReason, execution_price: last.close, execution_quantity: qty
+            secret: config.secret,
+            action: detectedDir === 'LONG' ? 'buy' : 'sell',
+            position: detectedDir.toLowerCase(),
+            symbol: config.symbol,
+            quantity: qty.toFixed(8),
+            trade_amount: qty * last.close,
+            timestamp: now.toISOString(),
+            strategy_name: config.name,
+            tp_level: detectedReason,
+            execution_price: last.close,
+            execution_quantity: qty
           });
+
           nextPos = {
-              ...nextPos, direction: intendedDirection, pendingSignal: 'NONE',
-              initialQuantity: qty, remainingQuantity: qty, entryPrice: last.close,
-              highestPrice: last.high, lowestPrice: last.low, openTime: now.getTime(),
-              tpLevelsHit: new Array(4).fill(false), slLevelsHit: new Array(4).fill(false),
-              delayedEntryCurrentCount: 0, lastCountedSignalTime: 0
+              ...nextPos,
+              direction: detectedDir,
+              initialQuantity: qty,
+              remainingQuantity: qty,
+              entryPrice: last.close,
+              highestPrice: last.high,
+              lowestPrice: last.low,
+              openTime: now.getTime(),
+              tpLevelsHit: new Array(4).fill(false),
+              slLevelsHit: new Array(4).fill(false),
+              // 开仓后重置计数器
+              delayedEntryCurrentCount: 0,
+              lastCountedSignalTime: 0
           };
           nextStats.dailyTradeCount++;
           nextStats.lastActionCandleTime = currentCandleTime;

@@ -85,23 +85,23 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
                                     <div 
                                       key={s.id} 
                                       onClick={() => onSelectStrategy(s.id)} 
-                                      className={`p-1.5 px-3 cursor-pointer transition-all flex items-center justify-between gap-2 ${selectedStrategyId === s.id ? 'bg-blue-50/80 ring-inset ring-1 ring-blue-100' : 'hover:bg-slate-50'}`}
+                                      className={`p-1 px-3 cursor-pointer transition-all flex items-center justify-between gap-1.5 ${selectedStrategyId === s.id ? 'bg-blue-50/80 ring-inset ring-1 ring-blue-100' : 'hover:bg-slate-50'}`}
                                     >
-                                        <div className="flex items-center gap-2 min-w-0 flex-1">
+                                        <div className="flex items-center gap-1.5 min-w-0 flex-1 flex-nowrap overflow-hidden">
                                             <div className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${s.isActive ? 'bg-emerald-500 animate-pulse' : 'bg-slate-300'}`}></div>
-                                            <span className={`text-[11px] font-bold truncate ${selectedStrategyId === s.id ? 'text-blue-700' : 'text-slate-700'}`}>{s.name}</span>
+                                            <span className={`text-[10px] font-bold truncate shrink-0 max-w-[60px] ${selectedStrategyId === s.id ? 'text-blue-700' : 'text-slate-700'}`}>{s.name}</span>
                                             
-                                            {/* 持仓状态标签 */}
-                                            {dir === 'LONG' && <span className="text-[8px] bg-emerald-500 text-white px-1 rounded font-bold leading-tight flex-shrink-0">多</span>}
-                                            {dir === 'SHORT' && <span className="text-[8px] bg-rose-500 text-white px-1 rounded font-bold leading-tight flex-shrink-0">空</span>}
+                                            {/* 持仓状态标签 - 极致缩小 */}
+                                            {dir === 'LONG' && <span className="text-[8px] bg-emerald-500 text-white px-0.5 rounded font-bold leading-tight flex-shrink-0">多</span>}
+                                            {dir === 'SHORT' && <span className="text-[8px] bg-rose-500 text-white px-0.5 rounded font-bold leading-tight flex-shrink-0">空</span>}
                                             
-                                            <div className="flex items-center gap-1 flex-shrink-0 border-l border-slate-200 pl-2 ml-1 opacity-70">
-                                                <span className="text-[9px] text-slate-500 font-mono">{s.symbol.replace('USDT', '')}</span>
+                                            <div className="flex items-center gap-1 flex-shrink-0 opacity-70 border-l border-slate-200 pl-1.5">
+                                                <span className="text-[9px] text-slate-500 font-mono truncate">{s.symbol.replace('USDT', '')}</span>
                                                 <span className="text-[9px] text-slate-400 font-mono uppercase">{s.interval}</span>
                                             </div>
                                         </div>
                                         
-                                        <div className="flex items-center">
+                                        <div className="flex items-center flex-shrink-0">
                                             {selectedStrategyId === s.id && strategies.length > 1 && (
                                                 <button 
                                                     onClick={(e) => { e.stopPropagation(); onRemoveStrategy(s.id); }} 
