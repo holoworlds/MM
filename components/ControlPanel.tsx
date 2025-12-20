@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { StrategyConfig, SystemConfig } from '../types';
 import { CRYPTO_SYMBOLS, AVAILABLE_INTERVALS } from '../constants';
@@ -172,6 +171,7 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
                                         </div>
                                         <div className="grid grid-cols-2 gap-2 mt-1">
                                             <Toggle label="金叉开多" checked={activeConfig.macdLong} onChange={(v: boolean) => handleChange('macdLong', v)} size="sm" />
+                                            <Toggle label="金叉开多" checked={activeConfig.macdLong} onChange={(v: boolean) => handleChange('macdLong', v)} size="sm" />
                                             <Toggle label="死叉开空" checked={activeConfig.macdShort} onChange={(v: boolean) => handleChange('macdShort', v)} size="sm" />
                                             <Toggle label="金叉平空" checked={activeConfig.macdExitShort} onChange={(v: boolean) => handleChange('macdExitShort', v)} size="sm" />
                                             <Toggle label="死叉平多" checked={activeConfig.macdExitLong} onChange={(v: boolean) => handleChange('macdExitLong', v)} size="sm" />
@@ -297,7 +297,7 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
                                             {activeConfig.tpLevels.map((tp: any, idx: number) => (
                                                 <div key={`tp-${idx}`} className="flex items-center gap-2 mb-1">
                                                     <span className="text-[10px] w-4 text-slate-500">#{idx+1}</span>
-                                                    <div className="w-16"><Input value={tp.pct} onChange={(v: string) => handleArrayChange('tpLevels', idx, 'pct', parseFloat(v))} placeholder="%" /></div>
+                                                    <div className="w-16"><Input type="number" step="0.1" min="0.1" value={tp.pct} onChange={(v: string) => handleArrayChange('tpLevels', idx, 'pct', parseFloat(v))} placeholder="%" /></div>
                                                     <span className="text-[10px] text-slate-400">%价</span>
                                                     <div className="w-16"><Input value={tp.qtyPct} onChange={(v: string) => handleArrayChange('tpLevels', idx, 'qtyPct', parseFloat(v))} placeholder="Qty%" /></div>
                                                     <span className="text-[10px] text-slate-400">%量</span>
@@ -310,7 +310,7 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
                                             {activeConfig.slLevels.map((sl: any, idx: number) => (
                                                 <div key={`sl-${idx}`} className="flex items-center gap-2 mb-1">
                                                      <span className="text-[10px] w-4 text-slate-500">#{idx+1}</span>
-                                                    <div className="w-16"><Input value={sl.pct} onChange={(v: string) => handleArrayChange('slLevels', idx, 'pct', parseFloat(v))} placeholder="%" /></div>
+                                                    <div className="w-16"><Input type="number" step="0.1" min="0.1" value={sl.pct} onChange={(v: string) => handleArrayChange('slLevels', idx, 'pct', parseFloat(v))} placeholder="%" /></div>
                                                     <span className="text-[10px] text-slate-400">%价</span>
                                                     <div className="w-16"><Input value={sl.qtyPct} onChange={(v: string) => handleArrayChange('slLevels', idx, 'qtyPct', parseFloat(v))} placeholder="Qty%" /></div>
                                                     <span className="text-[10px] text-slate-400">%量</span>
@@ -344,7 +344,7 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
   );
 };
 
-const Input = ({ label, value, onChange, type = "text", placeholder }: any) => (
+const Input = ({ label, value, onChange, type = "text", placeholder, ...props }: any) => (
   <div className="mb-2">
     {label && <label className="block text-slate-600 text-xs mb-1 font-medium">{label}</label>}
     <input 
@@ -353,6 +353,7 @@ const Input = ({ label, value, onChange, type = "text", placeholder }: any) => (
       onChange={(e) => onChange(e.target.value)} 
       placeholder={placeholder}
       className="w-full bg-white border border-slate-300 rounded p-1.5 text-xs text-slate-900 focus:border-blue-500 outline-none shadow-sm"
+      {...props}
     />
   </div>
 );
