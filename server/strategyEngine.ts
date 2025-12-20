@@ -57,16 +57,9 @@ export const evaluateStrategy = (
     return { newPositionState: nextPos, newTradeStats: nextStats, actions };
   }
 
-  // B. 每日限额与重复触发检查
-  const canTrade = nextStats.dailyTradeCount < config.maxDailyTrades && 
-                   tradeStats.lastActionCandleTime !== currentCandleTime;
-
-  // C. 手动接管检查：如果开启手动接管，彻底屏蔽自动开平仓逻辑
-  if (config.manualTakeover) {
-    // 这里仅同步 UI 设置的持仓状态到 runtime 状态，不执行自动逻辑
-    // 手动订单通过 StrategyRunner.handleManualOrder 处理
-    return { newPositionState: nextPos, newTradeStats: nextStats, actions };
-  }
+  // B. 每日限额检查
+  const isAtTradeLimit = nextStats.dailyTradeCount >= config.maxDailyTrades;
+  const isSameCandleAction = tradeStats.lastActionCandleTime === currentCandleTime;
 
   if (last.ema7 === undefined || last.ema25 === undefined || last.ema99 === undefined) {
     return { newPositionState: nextPos, newTradeStats: nextStats, actions };
@@ -75,8 +68,12 @@ export const evaluateStrategy = (
   // ---------------------------------------------------------
   // 第二层：平仓逻辑 (Exit Execution Layer)
   // ---------------------------------------------------------
+  // 即使在 manualTakeover 模式下，也要运行平仓逻辑，除非手动接管是指“全手动”
+  // 这里实现为：手动接管开启后，系统不再自动开仓，但会根据注入的持仓参数继续运行风控与自动平仓
+  
   let exitReason = '';
   let exitQuantity = 0;
+  let forceReverse = false;
 
   if (nextPos.direction !== 'FLAT') {
     const isLong = nextPos.direction === 'LONG';
@@ -123,13 +120,19 @@ export const evaluateStrategy = (
     // 4. 指标反转平仓 (组合判断)
     if (!exitReason) {
         if (isLong) {
-            if (config.useEMA7_25 && config.ema7_25_ExitLong && crossUnder(last.ema7, last.ema25, prev.ema7!, prev.ema25!)) exitReason = 'EMA7/25死叉平多';
+            if (config.useEMA7_25 && config.ema7_25_ExitLong && crossUnder(last.ema7, last.ema25, prev.ema7!, prev.ema25!)) {
+                exitReason = 'EMA7/25死叉平多';
+                if (config.useReverse && config.reverseLongToShort) forceReverse = true;
+            }
             else if (config.useEMA7_99 && config.ema7_99_ExitLong && crossUnder(last.ema7, last.ema99, prev.ema7!, prev.ema99!)) exitReason = 'EMA7/99死叉平多';
             else if (config.useEMA25_99 && config.ema25_99_ExitLong && crossUnder(last.ema25, last.ema99, prev.ema25!, prev.ema99!)) exitReason = 'EMA25/99死叉平多';
             else if (config.useEMADouble && config.emaDoubleExitLong && (last.ema7 < last.ema99 || last.ema25 < last.ema99)) exitReason = '双EMA跌破过滤线平多';
             else if (config.useMACD && config.macdExitLong && last.macdLine! < last.macdSignal!) exitReason = 'MACD死叉平多';
         } else {
-            if (config.useEMA7_25 && config.ema7_25_ExitShort && crossOver(last.ema7, last.ema25, prev.ema7!, prev.ema25!)) exitReason = 'EMA7/25金叉平空';
+            if (config.useEMA7_25 && config.ema7_25_ExitShort && crossOver(last.ema7, last.ema25, prev.ema7!, prev.ema25!)) {
+                exitReason = 'EMA7/25金叉平空';
+                if (config.useReverse && config.reverseShortToLong) forceReverse = true;
+            }
             else if (config.useEMA7_99 && config.ema7_99_ExitShort && crossOver(last.ema7, last.ema99, prev.ema7!, prev.ema99!)) exitReason = 'EMA7/99金叉平空';
             else if (config.useEMA25_99 && config.ema25_99_ExitShort && crossOver(last.ema25, last.ema99, prev.ema25!, prev.ema99!)) exitReason = 'EMA25/99金叉平空';
             else if (config.useEMADouble && config.emaDoubleExitShort && (last.ema7 > last.ema99 || last.ema25 > last.ema99)) exitReason = '双EMA上破过滤线平空';
@@ -155,23 +158,15 @@ export const evaluateStrategy = (
         });
 
         if (isFullExit) {
-            // 反手逻辑检查 (Reverse)
-            let isReversed = false;
-            if (config.useReverse) {
-                if (isLong && config.reverseLongToShort) {
-                    // 这里不直接开仓，而是标记，由下一轮开仓逻辑捕获或在这里直接处理
-                }
-            }
-
             nextPos = { 
               ...nextPos, direction: 'FLAT', initialQuantity: 0, remainingQuantity: 0, 
               entryPrice: 0, highestPrice: 0, lowestPrice: 0, openTime: 0, 
               tpLevelsHit: new Array(4).fill(false), slLevelsHit: new Array(4).fill(false),
-              pendingSignal: 'NONE' // 平仓时清空所有挂起信号
+              pendingSignal: 'NONE' 
             };
             nextStats.lastActionCandleTime = currentCandleTime;
-            
-            // 如果是完全平仓，本根K线平仓后通常不再允许立即在同一方向开仓，除非是反手
+            // 平仓也计入每日限制
+            nextStats.dailyTradeCount++;
         } else {
             nextPos.remainingQuantity -= actualQty;
         }
@@ -184,26 +179,38 @@ export const evaluateStrategy = (
   let detectedDir: 'LONG' | 'SHORT' | 'NONE' = 'NONE';
   let detectedReason = '';
 
-  if (nextPos.direction === 'FLAT' && canTrade) {
-      // EMA 7/25 交叉
-      if (config.useEMA7_25) {
-          if (config.ema7_25_Long && crossOver(last.ema7, last.ema25, prev.ema7!, prev.ema25!)) { detectedDir = 'LONG'; detectedReason = 'EMA7/25金叉'; }
-          else if (config.ema7_25_Short && crossUnder(last.ema7, last.ema25, prev.ema7!, prev.ema25!)) { detectedDir = 'SHORT'; detectedReason = 'EMA7/25死叉'; }
-      }
-      // EMA 7/99 交叉
-      if (detectedDir === 'NONE' && config.useEMA7_99) {
-          if (config.ema7_99_Long && crossOver(last.ema7, last.ema99, prev.ema7!, prev.ema99!)) { detectedDir = 'LONG'; detectedReason = 'EMA7/99金叉'; }
-          else if (detectedDir === 'NONE' && config.ema7_99_Short && crossUnder(last.ema7, last.ema99, prev.ema7!, prev.ema99!)) { detectedDir = 'SHORT'; detectedReason = 'EMA7/99死叉'; }
-      }
-      // EMA 25/99 交叉
-      if (detectedDir === 'NONE' && config.useEMA25_99) {
-          if (config.ema25_99_Long && crossOver(last.ema25, last.ema99, prev.ema25!, prev.ema99!)) { detectedDir = 'LONG'; detectedReason = 'EMA25/99金叉'; }
-          else if (detectedDir === 'NONE' && config.ema25_99_Short && crossUnder(last.ema25, last.ema99, prev.ema25!, prev.ema99!)) { detectedDir = 'SHORT'; detectedReason = 'EMA25/99死叉'; }
-      }
-      // MACD 交叉
-      if (detectedDir === 'NONE' && config.useMACD) {
-          if (config.macdLong && crossOver(last.macdLine!, last.macdSignal!, prev.macdLine!, prev.macdSignal!)) { detectedDir = 'LONG'; detectedReason = 'MACD金叉'; }
-          else if (detectedDir === 'NONE' && config.macdShort && crossUnder(last.macdLine!, last.macdSignal!, prev.macdLine!, prev.macdSignal!)) { detectedDir = 'SHORT'; detectedReason = 'MACD死叉'; }
+  // 关键修正：如果开启手动接管，屏蔽所有自动信号的开仓
+  const entryBlockedByManual = config.manualTakeover;
+
+  if (nextPos.direction === 'FLAT' && !isAtTradeLimit && !entryBlockedByManual) {
+      // 允许在平仓后的同一根K线执行反手
+      const canEntryNow = (tradeStats.lastActionCandleTime !== currentCandleTime) || forceReverse;
+
+      if (canEntryNow) {
+          // EMA 7/25 交叉
+          if (config.useEMA7_25) {
+              if (config.ema7_25_Long && crossOver(last.ema7, last.ema25, prev.ema7!, prev.ema25!)) { detectedDir = 'LONG'; detectedReason = 'EMA7/25金叉'; }
+              else if (config.ema7_25_Short && crossUnder(last.ema7, last.ema25, prev.ema7!, prev.ema25!)) { detectedDir = 'SHORT'; detectedReason = 'EMA7/25死叉'; }
+          }
+          // EMA 7/99 交叉
+          if (detectedDir === 'NONE' && config.useEMA7_99) {
+              if (config.ema7_99_Long && crossOver(last.ema7, last.ema99, prev.ema7!, prev.ema99!)) { detectedDir = 'LONG'; detectedReason = 'EMA7/99金叉'; }
+              else if (detectedDir === 'NONE' && config.ema7_99_Short && crossUnder(last.ema7, last.ema99, prev.ema7!, prev.ema99!)) { detectedDir = 'SHORT'; detectedReason = 'EMA7/99死叉'; }
+          }
+          // EMA 25/99 交叉
+          if (detectedDir === 'NONE' && config.useEMA25_99) {
+              if (config.ema25_99_Long && crossOver(last.ema25, last.ema99, prev.ema25!, prev.ema99!)) { detectedDir = 'LONG'; detectedReason = 'EMA25/99金叉'; }
+              else if (detectedDir === 'NONE' && config.ema25_99_Short && crossUnder(last.ema25, last.ema99, prev.ema25!, prev.ema99!)) { detectedDir = 'SHORT'; detectedReason = 'EMA25/99死叉'; }
+          }
+          // MACD 交叉
+          if (detectedDir === 'NONE' && config.useMACD) {
+              if (config.macdLong && crossOver(last.macdLine!, last.macdSignal!, prev.macdLine!, prev.macdSignal!)) { detectedDir = 'LONG'; detectedReason = 'MACD金叉'; }
+              else if (detectedDir === 'NONE' && config.macdShort && crossUnder(last.macdLine!, last.macdSignal!, prev.macdLine!, prev.macdSignal!)) { detectedDir = 'SHORT'; detectedReason = 'MACD死叉'; }
+          }
+          
+          if (forceReverse) {
+              detectedReason = `[反手] ${detectedReason}`;
+          }
       }
   }
 
@@ -211,18 +218,15 @@ export const evaluateStrategy = (
   // 第四层：开仓闸门层 (Entry Gate Layer)
   // ---------------------------------------------------------
   
-  // 闸门 1: 趋势过滤 (Trend Filter)
   if (detectedDir === 'LONG' && config.trendFilterBlockLong) {
       const isTrendBullish = last.ema7 > last.ema25 && last.ema25 > last.ema99;
-      if (!isTrendBullish) { detectedDir = 'NONE'; }
+      if (!isTrendBullish) detectedDir = 'NONE';
   }
   if (detectedDir === 'SHORT' && config.trendFilterBlockShort) {
       const isTrendBearish = last.ema7 < last.ema25 && last.ema25 < last.ema99;
-      if (!isTrendBearish) { detectedDir = 'NONE'; }
+      if (!isTrendBearish) detectedDir = 'NONE';
   }
 
-  // 闸门 2: 延后开仓计数器 (Delayed Entry Counter)
-  // 此逻辑必须在“新信号”产生的时刻执行
   if (detectedDir !== 'NONE' && config.useDelayedEntry) {
       const isTypeMatch = config.delayedEntryType === 'BOTH' || 
                          (config.delayedEntryType === 'LONG' && detectedDir === 'LONG') ||
@@ -233,49 +237,34 @@ export const evaluateStrategy = (
               nextPos.delayedEntryCurrentCount++;
               nextPos.lastCountedSignalTime = last.time;
           }
-          
           if (nextPos.delayedEntryCurrentCount < config.delayedEntryTargetCount) {
-              // 计数未达标，拦截信号
               detectedDir = 'NONE';
-          } else {
-              detectedReason = `[延后#${nextPos.delayedEntryCurrentCount}] ${detectedReason}`;
           }
       } else {
-          // 不匹配方向或未激活，拦截
           detectedDir = 'NONE';
       }
   }
 
-  // 闸门 3: EMA7 价格回归状态机 (Price Return State Machine)
-  // 如果产生了信号（且通过了延后计数），检查是否需要等待回归
-  if (detectedDir !== 'NONE') {
-      if (config.usePriceReturnEMA7) {
-          const distPct = Math.abs(last.close - last.ema7) / last.ema7 * 100;
-          if (distPct > config.priceReturnDist) {
-              // 价格太远，进入挂起状态
-              nextPos.pendingSignal = detectedDir;
-              nextPos.pendingSignalSource = detectedReason;
-              detectedDir = 'NONE'; // 拦截当前即时开仓
-          }
+  if (detectedDir !== 'NONE' && config.usePriceReturnEMA7) {
+      const distPct = Math.abs(last.close - last.ema7) / last.ema7 * 100;
+      if (distPct > config.priceReturnDist) {
+          nextPos.pendingSignal = detectedDir;
+          nextPos.pendingSignalSource = detectedReason;
+          detectedDir = 'NONE';
       }
   }
 
-  // 闸门 4: 挂起信号的释放 (Release Pending Signal)
-  if (nextPos.pendingSignal !== 'NONE' && detectedDir === 'NONE') {
+  if (nextPos.pendingSignal !== 'NONE' && detectedDir === 'NONE' && !entryBlockedByManual) {
       const distPct = Math.abs(last.close - last.ema7) / last.ema7 * 100;
       if (distPct <= config.priceReturnDist) {
-          // 价格回归，释放信号
           detectedDir = nextPos.pendingSignal;
           detectedReason = `[回归确认] ${nextPos.pendingSignalSource}`;
           nextPos.pendingSignal = 'NONE';
           nextPos.pendingSignalSource = '';
       } else {
-          // 检查挂起信号是否依然有效（趋势是否反转）
           const isInvalid = (nextPos.pendingSignal === 'LONG' && last.ema7 < last.ema25) || 
                             (nextPos.pendingSignal === 'SHORT' && last.ema7 > last.ema25);
-          if (isInvalid) {
-              nextPos.pendingSignal = 'NONE';
-          }
+          if (isInvalid) nextPos.pendingSignal = 'NONE';
       }
   }
 
@@ -310,7 +299,6 @@ export const evaluateStrategy = (
               openTime: now.getTime(),
               tpLevelsHit: new Array(4).fill(false),
               slLevelsHit: new Array(4).fill(false),
-              // 开仓后重置计数器
               delayedEntryCurrentCount: 0,
               lastCountedSignalTime: 0
           };

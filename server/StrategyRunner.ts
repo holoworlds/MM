@@ -74,27 +74,32 @@ export class StrategyRunner {
         const oldSymbol = this.runtime.config.symbol;
         const oldInterval = this.runtime.config.interval;
         
-        // 特殊处理：如果延后开仓功能刚开启，重置计数并设置激活时间
+        // 1. 延后开仓初始化
         if (newConfig.useDelayedEntry && !this.runtime.config.useDelayedEntry) {
             this.runtime.positionState.delayedEntryCurrentCount = 0;
             this.runtime.positionState.lastCountedSignalTime = 0;
-            
-            // 修正：将激活时间对齐到当前最后一根K线的时间戳，确保 inclusive 判定生效
             const lastCandle = this.runtime.candles[this.runtime.candles.length - 1];
             newConfig.delayedEntryActivationTime = lastCandle ? lastCandle.time : Date.now();
-        } else if (!newConfig.useDelayedEntry) {
-            newConfig.delayedEntryActivationTime = 0;
-            this.runtime.positionState.delayedEntryCurrentCount = 0;
         }
 
-        // 手动接管同步：如果 UI 开启手动接管，尝试同步 UI 传入的仓位状态到 runtime
+        // 2. 手动接管（仓位注入语义）
+        // 如果开启手动接管，将 UI 指定的真实持仓参数强行注入系统 runtime
+        // 注入后，系统将停止自动开仓，但会根据注入的 entryPrice 和数量继续运行平仓/止盈止损逻辑
         if (newConfig.manualTakeover) {
-            this.runtime.positionState.direction = newConfig.takeoverDirection;
-            // 只有当方向不为 FLAT 时，初始化一些基础值防止报错
-            if (newConfig.takeoverDirection !== 'FLAT' && this.runtime.positionState.entryPrice === 0) {
-                this.runtime.positionState.entryPrice = this.runtime.lastPrice;
-                this.runtime.positionState.initialQuantity = newConfig.takeoverQuantity;
-                this.runtime.positionState.remainingQuantity = newConfig.takeoverQuantity;
+            this.runtime.positionState = {
+                ...this.runtime.positionState,
+                direction: newConfig.takeoverDirection,
+                entryPrice: newConfig.takeoverQuantity > 0 ? (this.runtime.positionState.entryPrice || this.runtime.lastPrice) : 0,
+                initialQuantity: newConfig.takeoverQuantity,
+                remainingQuantity: newConfig.takeoverQuantity,
+                highestPrice: this.runtime.lastPrice,
+                lowestPrice: this.runtime.lastPrice,
+                openTime: this.runtime.positionState.openTime || Date.now()
+            };
+            
+            // 如果接管方向是 FLAT，重置所有状态
+            if (newConfig.takeoverDirection === 'FLAT') {
+                this.runtime.positionState = { ...INITIAL_POS_STATE };
             }
         }
 
@@ -161,7 +166,6 @@ export class StrategyRunner {
         if (price === 0) return;
         const qty = this.runtime.config.tradeAmount / price;
         
-        // 发送成交记录
         const payload: WebhookPayload = {
             secret: this.runtime.config.secret,
             action: type === 'LONG' ? 'buy' : type === 'SHORT' ? 'sell' : 'flat',
