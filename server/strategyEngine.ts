@@ -51,34 +51,13 @@ export const evaluateStrategy = (
     return { newPositionState: nextPos, newTradeStats: nextStats, actions };
   }
 
-  const isEMA7_25_Up = last.ema7 > last.ema25;
-  const isEMA7_25_Down = last.ema7 < last.ema25;
-
-  const checkPullbackTouch = (ema7: number, distPct: number, trend: 'UP' | 'DOWN'): boolean => {
-      const buffer = ema7 * (distPct / 100);
-      return trend === 'UP' 
-        ? (last.low <= ema7 + buffer && last.close >= ema7 - buffer)
-        : (last.high >= ema7 - buffer && last.close <= ema7 + buffer);
-  };
-
-  const isPriceTooFar = (ema7: number, distPct: number): boolean => {
-      const dist = Math.abs(last.close - ema7) / ema7 * 100;
-      return dist > distPct;
-  };
-
   const canTrade = nextStats.dailyTradeCount < config.maxDailyTrades && 
                    tradeStats.lastActionCandleTime !== currentCandleTime;
-
-  if (!canTrade && nextPos.direction === 'FLAT') {
-      nextPos.pendingSignal = 'NONE';
-      nextPos.pendingSignalSource = '';
-  }
 
   let exitReason = '';
   let entryReason = '';
   let intendedDirection: 'LONG' | 'SHORT' | 'NONE' = 'NONE';
   let exitQuantity = 0;
-  let isSignalExit = false; 
 
   if (!config.manualTakeover) {
       
@@ -95,16 +74,14 @@ export const evaluateStrategy = (
           }
 
           if (!exitReason && config.useMultiTPSL) {
-              const levels = isLong ? config.tpLevels : config.slLevels;
-              const hits = isLong ? nextPos.tpLevelsHit : nextPos.slLevelsHit;
-              
-              for (let i = 0; i < levels.length; i++) {
-                  if (levels[i].active && !hits[i]) {
-                      const trigger = isLong ? (pnlPct >= levels[i].pct) : (pnlPct <= -levels[i].pct);
+              for (let i = 0; i < config.tpLevels.length; i++) {
+                  const tp = config.tpLevels[i];
+                  if (tp.active && !nextPos.tpLevelsHit[i]) {
+                      const trigger = isLong ? (pnlPct >= tp.pct) : (pnlPct <= -tp.pct);
                       if (trigger) {
-                          exitReason = `多级${isLong ? '止盈' : '止损'}#${i+1}(${levels[i].pct}%)`;
-                          exitQuantity = (nextPos.initialQuantity * levels[i].qtyPct) / 100;
-                          hits[i] = true;
+                          exitReason = `多级止盈#${i+1}(${tp.pct}%)`;
+                          exitQuantity = (nextPos.initialQuantity * tp.qtyPct) / 100;
+                          nextPos.tpLevelsHit[i] = true;
                           break;
                       }
                   }
@@ -126,28 +103,19 @@ export const evaluateStrategy = (
 
           if (!exitReason) {
               if (isLong) {
-                  if (config.useEMA7_25 && config.ema7_25_ExitLong && crossUnder(last.ema7, last.ema25, prev.ema7!, prev.ema25!)) {
-                      exitReason = 'EMA死叉平多';
-                      isSignalExit = true;
-                  } else if (config.useMACD && config.macdExitLong && crossUnder(last.macdLine!, last.macdSignal!, prev.macdLine!, prev.macdSignal!)) {
-                      exitReason = 'MACD死叉平多';
-                      isSignalExit = true;
-                  }
+                  if (config.useEMA7_25 && config.ema7_25_ExitLong && crossUnder(last.ema7, last.ema25, prev.ema7!, prev.ema25!)) exitReason = 'EMA死叉平多';
+                  else if (config.useEMA7_99 && config.ema7_99_ExitLong && crossUnder(last.ema7, last.ema99, prev.ema7!, prev.ema99!)) exitReason = 'EMA7/99死叉平多';
+                  else if (config.useEMA25_99 && config.ema25_99_ExitLong && crossUnder(last.ema25, last.ema99, prev.ema25!, prev.ema99!)) exitReason = 'EMA25/99死叉平多';
               } else {
-                  if (config.useEMA7_25 && config.ema7_25_ExitShort && crossOver(last.ema7, last.ema25, prev.ema7!, prev.ema25!)) {
-                      exitReason = 'EMA金叉平空';
-                      isSignalExit = true;
-                  } else if (config.useMACD && config.macdExitShort && crossOver(last.macdLine!, last.macdSignal!, prev.macdLine!, prev.macdSignal!)) {
-                      exitReason = 'MACD金叉平空';
-                      isSignalExit = true;
-                  }
+                  if (config.useEMA7_25 && config.ema7_25_ExitShort && crossOver(last.ema7, last.ema25, prev.ema7!, prev.ema25!)) exitReason = 'EMA金叉平空';
+                  else if (config.useEMA7_99 && config.ema7_99_ExitShort && crossOver(last.ema7, last.ema99, prev.ema7!, prev.ema99!)) exitReason = 'EMA7/99金叉平空';
+                  else if (config.useEMA25_99 && config.ema25_99_ExitShort && crossOver(last.ema25, last.ema99, prev.ema25!, prev.ema99!)) exitReason = 'EMA25/99金叉平空';
               }
           }
 
           if (exitReason) {
               const isFullExit = exitQuantity === 0 || exitQuantity >= nextPos.remainingQuantity;
               const actualQty = isFullExit ? nextPos.remainingQuantity : exitQuantity;
-
               actions.push({
                 secret: config.secret,
                 action: isLong ? 'sell' : 'buy',
@@ -161,11 +129,9 @@ export const evaluateStrategy = (
                 execution_price: last.close,
                 execution_quantity: actualQty
               });
-
               if (isFullExit) {
                   nextPos = { 
-                    ...nextPos,
-                    direction: 'FLAT', pendingSignal: 'NONE', pendingSignalSource: '', initialQuantity: 0, remainingQuantity: 0, 
+                    ...nextPos, direction: 'FLAT', initialQuantity: 0, remainingQuantity: 0, 
                     entryPrice: 0, highestPrice: 0, lowestPrice: 0, openTime: 0, 
                     tpLevelsHit: new Array(4).fill(false), slLevelsHit: new Array(4).fill(false),
                     delayedEntryCurrentCount: 0, lastCountedSignalTime: 0
@@ -179,145 +145,70 @@ export const evaluateStrategy = (
 
       // --- B. 常规开仓逻辑 ---
       if (canTrade && nextPos.direction === 'FLAT' && intendedDirection === 'NONE') {
-          const isLongBlocked = config.trendFilterBlockLong && (last.ema7 < last.ema25 || last.ema25 < last.ema99);
-          const isShortBlocked = config.trendFilterBlockShort && (last.ema7 > last.ema25 || last.ema25 > last.ema99);
-
-          let rawEntryReason = '';
           let rawDirection: 'LONG' | 'SHORT' | 'NONE' = 'NONE';
-          let isEMA7_25_BaseEvent = false; // 此变量标记：本次信号是否属于 EMA7/25 体系（金叉、死叉、或基于它们的回归）
+          let rawReason = '';
 
-          if (config.usePriceReturnEMA7) {
-              if (nextPos.pendingSignal === 'NONE') {
-                  let source = '';
-                  if (config.useEMA7_25 && config.ema7_25_Long && crossOver(last.ema7, last.ema25, prev.ema7!, prev.ema25!)) { source = 'EMA金叉'; }
-                  else if (config.useMACD && config.macdLong && crossOver(last.macdLine!, last.macdSignal!, prev.macdLine!, prev.macdSignal!)) source = 'MACD金叉';
-
-                  if (source && !isLongBlocked) {
-                      if (isPriceTooFar(last.ema7, config.priceReturnDist)) {
-                          nextPos.pendingSignal = 'LONG';
-                          nextPos.pendingSignalSource = source;
-                      } else if (checkPullbackTouch(last.ema7, config.priceReturnDist, 'UP')) {
-                          rawDirection = 'LONG';
-                          rawEntryReason = `${source} + EMA7回归确认`;
-                          if (source.includes('EMA')) isEMA7_25_BaseEvent = true;
-                      }
-                  } else {
-                      if (config.useEMA7_25 && config.ema7_25_Short && crossUnder(last.ema7, last.ema25, prev.ema7!, prev.ema25!)) { source = 'EMA死叉'; }
-                      else if (config.useMACD && config.macdShort && crossUnder(last.macdLine!, last.macdSignal!, prev.macdLine!, prev.macdSignal!)) source = 'MACD死叉';
-
-                      if (source && !isShortBlocked) {
-                          if (isPriceTooFar(last.ema7, config.priceReturnDist)) {
-                              nextPos.pendingSignal = 'SHORT';
-                              nextPos.pendingSignalSource = source;
-                          } else if (checkPullbackTouch(last.ema7, config.priceReturnDist, 'DOWN')) {
-                              rawDirection = 'SHORT';
-                              rawEntryReason = `${source} + EMA7回归确认`;
-                              if (source.includes('EMA')) isEMA7_25_BaseEvent = true;
-                          }
-                      }
-                  }
-              } else {
-                  // 已有挂起信号，监测回踩
-                  if (nextPos.pendingSignal === 'LONG' && isEMA7_25_Up && !isLongBlocked) {
-                      if (checkPullbackTouch(last.ema7, config.priceReturnDist, 'UP')) {
-                          rawDirection = 'LONG';
-                          rawEntryReason = `${nextPos.pendingSignalSource || 'EMA金叉'} + EMA7回归确认`;
-                          if (rawEntryReason.includes('EMA')) isEMA7_25_BaseEvent = true;
-                      }
-                  } else if (nextPos.pendingSignal === 'SHORT' && isEMA7_25_Down && !isShortBlocked) {
-                      if (checkPullbackTouch(last.ema7, config.priceReturnDist, 'DOWN')) {
-                          rawDirection = 'SHORT';
-                          rawEntryReason = `${nextPos.pendingSignalSource || 'EMA死叉'} + EMA7回归确认`;
-                          if (rawEntryReason.includes('EMA')) isEMA7_25_BaseEvent = true;
-                      }
-                  }
-                  // 趋势失效检测
-                  if (nextPos.pendingSignal === 'LONG' && isEMA7_25_Down) nextPos.pendingSignal = 'NONE';
-                  if (nextPos.pendingSignal === 'SHORT' && isEMA7_25_Up) nextPos.pendingSignal = 'NONE';
-              }
-          } else {
-              // 普通模式
-              if (config.useEMA7_25) {
-                  if (config.ema7_25_Long && !isLongBlocked && crossOver(last.ema7, last.ema25, prev.ema7!, prev.ema25!)) { rawDirection = 'LONG'; rawEntryReason = 'EMA金叉'; isEMA7_25_BaseEvent = true; }
-                  else if (config.ema7_25_Short && !isShortBlocked && crossUnder(last.ema7, last.ema25, prev.ema7!, prev.ema25!)) { rawDirection = 'SHORT'; rawEntryReason = 'EMA死叉'; isEMA7_25_BaseEvent = true; }
-              }
-              if (rawDirection === 'NONE' && config.useMACD) {
-                  if (config.macdLong && !isLongBlocked && crossOver(last.macdLine!, last.macdSignal!, prev.macdLine!, prev.macdSignal!)) { rawDirection = 'LONG'; rawEntryReason = 'MACD金叉'; }
-                  else if (config.macdShort && !isShortBlocked && crossUnder(last.macdLine!, last.macdSignal!, prev.macdLine!, prev.macdSignal!)) { rawDirection = 'SHORT'; rawEntryReason = 'MACD死叉'; }
-              }
+          // 1. 信号检测 (EMA 组合)
+          if (config.useEMA7_25) {
+              if (config.ema7_25_Long && crossOver(last.ema7, last.ema25, prev.ema7!, prev.ema25!)) { rawDirection = 'LONG'; rawReason = 'EMA金叉(7/25)'; }
+              else if (config.ema7_25_Short && crossUnder(last.ema7, last.ema25, prev.ema7!, prev.ema25!)) { rawDirection = 'SHORT'; rawReason = 'EMA死叉(7/25)'; }
+          }
+          if (rawDirection === 'NONE' && config.useEMA7_99) {
+              if (config.ema7_99_Long && crossOver(last.ema7, last.ema99, prev.ema7!, prev.ema99!)) { rawDirection = 'LONG'; rawReason = 'EMA金叉(7/99)'; }
+              else if (config.ema7_99_Short && crossUnder(last.ema7, last.ema99, prev.ema7!, prev.ema99!)) { rawDirection = 'SHORT'; rawReason = 'EMA死叉(7/99)'; }
+          }
+          if (rawDirection === 'NONE' && config.useEMA25_99) {
+              if (config.ema25_99_Long && crossOver(last.ema25, last.ema99, prev.ema25!, prev.ema99!)) { rawDirection = 'LONG'; rawReason = 'EMA金叉(25/99)'; }
+              else if (config.ema25_99_Short && crossUnder(last.ema25, last.ema99, prev.ema25!, prev.ema99!)) { rawDirection = 'SHORT'; rawReason = 'EMA死叉(25/99)'; }
           }
 
-          // --- 核心：延后开仓执行 ---
+          // 2. 信号处理 (包含延后逻辑)
           if (rawDirection !== 'NONE') {
-              if (config.useDelayedEntry && isEMA7_25_BaseEvent) {
-                  const isDirectionMatch = 
-                      config.delayedEntryType === 'BOTH' || 
-                      (config.delayedEntryType === 'LONG' && rawDirection === 'LONG') ||
-                      (config.delayedEntryType === 'SHORT' && rawDirection === 'SHORT');
-
-                  // 时间检测：信号时间 >= 开启延后后的激活时间
-                  if (last.time >= config.delayedEntryActivationTime && isDirectionMatch) {
-                      // 1. 计数累加（同一根K线只计一次）
+              if (config.useDelayedEntry) {
+                  const isMatch = config.delayedEntryType === 'BOTH' || 
+                                (config.delayedEntryType === 'LONG' && rawDirection === 'LONG') ||
+                                (config.delayedEntryType === 'SHORT' && rawDirection === 'SHORT');
+                  
+                  // 重要：确保 activationTime 是包含性的 (inclusive)
+                  if (last.time >= config.delayedEntryActivationTime && isMatch) {
+                      // 仅在新的信号周期累加计数
                       if (nextPos.lastCountedSignalTime !== last.time) {
                           nextPos.delayedEntryCurrentCount++;
                           nextPos.lastCountedSignalTime = last.time;
                       }
                       
-                      // 2. 检查是否达到目标值
+                      // N=1 或 达到目标值，立即触发
                       if (nextPos.delayedEntryCurrentCount >= config.delayedEntryTargetCount) {
                           intendedDirection = rawDirection;
-                          entryReason = `延后触发(#${nextPos.delayedEntryCurrentCount}): ${rawEntryReason}`;
-                      } else {
-                          // 未达次数，必须清除 pendingSignal 状态以便监听下一次
-                          nextPos.pendingSignal = 'NONE';
-                          nextPos.pendingSignalSource = '';
+                          entryReason = `延后触发#${nextPos.delayedEntryCurrentCount}: ${rawReason}`;
                       }
-                  } else {
-                      // 信号不匹配方向或时间未到，清理状态，不计数
-                      nextPos.pendingSignal = 'NONE';
-                      nextPos.pendingSignalSource = '';
                   }
               } else {
-                  // 非延迟模式或非 EMA7/25 事件（如 MACD 信号），直接执行
+                  // 无延迟直接执行
                   intendedDirection = rawDirection;
-                  entryReason = rawEntryReason;
+                  entryReason = rawReason;
               }
           }
       }
   }
 
+  // --- C. 执行最终开仓指令 ---
   if (intendedDirection !== 'NONE') {
       const qty = config.tradeAmount / last.close;
       if (qty > 0) {
           actions.push({
-            secret: config.secret,
-            action: intendedDirection === 'LONG' ? 'buy' : 'sell',
-            position: intendedDirection.toLowerCase(),
-            symbol: config.symbol,
-            quantity: qty.toFixed(8),
-            trade_amount: qty * last.close,
-            timestamp: now.toISOString(),
-            strategy_name: config.name,
-            tp_level: entryReason,
-            execution_price: last.close,
-            execution_quantity: qty
+            secret: config.secret, action: intendedDirection === 'LONG' ? 'buy' : 'sell',
+            position: intendedDirection.toLowerCase(), symbol: config.symbol,
+            quantity: qty.toFixed(8), trade_amount: qty * last.close,
+            timestamp: now.toISOString(), strategy_name: config.name,
+            tp_level: entryReason, execution_price: last.close, execution_quantity: qty
           });
-          
           nextPos = {
-              ...nextPos,
-              direction: intendedDirection,
-              pendingSignal: 'NONE',
-              pendingSignalSource: '',
-              initialQuantity: qty,
-              remainingQuantity: qty,
-              entryPrice: last.close,
-              highestPrice: last.high,
-              lowestPrice: last.low,
-              openTime: now.getTime(),
-              tpLevelsHit: new Array(4).fill(false),
-              slLevelsHit: new Array(4).fill(false),
-              delayedEntryCurrentCount: 0,
-              lastCountedSignalTime: 0
+              ...nextPos, direction: intendedDirection, pendingSignal: 'NONE',
+              initialQuantity: qty, remainingQuantity: qty, entryPrice: last.close,
+              highestPrice: last.high, lowestPrice: last.low, openTime: now.getTime(),
+              tpLevelsHit: new Array(4).fill(false), slLevelsHit: new Array(4).fill(false),
+              delayedEntryCurrentCount: 0, lastCountedSignalTime: 0
           };
           nextStats.dailyTradeCount++;
           nextStats.lastActionCandleTime = currentCandleTime;

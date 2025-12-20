@@ -16,7 +16,7 @@ interface ControlPanelProps {
   positionStatus: string;
   systemConfig?: SystemConfig;
   updateSystemConfig?: (cfg: Partial<SystemConfig>) => void;
-  allRuntimes?: Record<string, StrategyRuntime>; // 传入所有运行时以便在列表中显示持仓
+  allRuntimes?: Record<string, StrategyRuntime>; 
 }
 
 const ControlPanel: React.FC<ControlPanelProps> = ({ 
@@ -54,7 +54,7 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
   const currentSymbols = CRYPTO_SYMBOLS;
 
   return (
-    <div className="bg-white rounded-lg border border-slate-200 h-full flex shadow-sm overflow-hidden">
+    <div className="bg-white rounded-lg border border-slate-200 h-full flex shadow-sm overflow-hidden text-slate-800">
         
         {/* SIDEBAR STRIP */}
         <div className="w-12 bg-slate-100 border-r border-slate-200 flex flex-col items-center py-4 gap-4 flex-shrink-0">
@@ -74,7 +74,7 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
                 <div className="space-y-6">
                     <div className="bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden">
                         <div className="flex justify-between items-center px-3 py-2 border-b border-slate-100 bg-slate-50">
-                            <h2 className="text-slate-800 font-bold text-xs">策略概览 ({strategies.length})</h2>
+                            <h2 className="text-slate-800 font-bold text-xs uppercase tracking-wider">策略概览</h2>
                             <button onClick={onAddStrategy} className="bg-blue-600 hover:bg-blue-500 text-white px-2 py-0.5 rounded text-[10px] shadow-sm transition-colors">+ 添加</button>
                         </div>
                         <div className="max-h-64 overflow-y-auto custom-scrollbar divide-y divide-slate-50">
@@ -85,29 +85,32 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
                                     <div 
                                       key={s.id} 
                                       onClick={() => onSelectStrategy(s.id)} 
-                                      className={`p-2 cursor-pointer transition-all flex items-center gap-3 ${selectedStrategyId === s.id ? 'bg-blue-50/50' : 'hover:bg-slate-50'}`}
+                                      className={`p-1.5 px-3 cursor-pointer transition-all flex items-center justify-between gap-2 ${selectedStrategyId === s.id ? 'bg-blue-50/80 ring-inset ring-1 ring-blue-100' : 'hover:bg-slate-50'}`}
                                     >
-                                        <div className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${s.isActive ? 'bg-emerald-500 animate-pulse' : 'bg-slate-300'}`}></div>
-                                        <div className="flex-1 min-w-0">
-                                            <div className="flex justify-between items-center">
-                                                <span className={`text-[11px] font-bold truncate ${selectedStrategyId === s.id ? 'text-blue-700' : 'text-slate-700'}`}>{s.name}</span>
-                                                <span className="text-[9px] text-slate-400 font-mono">{s.symbol} {s.interval}</span>
-                                            </div>
-                                            <div className="flex items-center gap-2 mt-0.5">
-                                                {dir === 'LONG' && <span className="text-[9px] bg-emerald-100 text-emerald-600 px-1 rounded font-bold">LONG</span>}
-                                                {dir === 'SHORT' && <span className="text-[9px] bg-rose-100 text-rose-600 px-1 rounded font-bold">SHORT</span>}
-                                                {dir === 'FLAT' && <span className="text-[9px] bg-slate-100 text-slate-500 px-1 rounded">空仓</span>}
+                                        <div className="flex items-center gap-2 min-w-0 flex-1">
+                                            <div className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${s.isActive ? 'bg-emerald-500 animate-pulse' : 'bg-slate-300'}`}></div>
+                                            <span className={`text-[11px] font-bold truncate ${selectedStrategyId === s.id ? 'text-blue-700' : 'text-slate-700'}`}>{s.name}</span>
+                                            
+                                            {/* 持仓状态标签 */}
+                                            {dir === 'LONG' && <span className="text-[8px] bg-emerald-500 text-white px-1 rounded font-bold leading-tight flex-shrink-0">多</span>}
+                                            {dir === 'SHORT' && <span className="text-[8px] bg-rose-500 text-white px-1 rounded font-bold leading-tight flex-shrink-0">空</span>}
+                                            
+                                            <div className="flex items-center gap-1 flex-shrink-0 border-l border-slate-200 pl-2 ml-1 opacity-70">
+                                                <span className="text-[9px] text-slate-500 font-mono">{s.symbol.replace('USDT', '')}</span>
+                                                <span className="text-[9px] text-slate-400 font-mono uppercase">{s.interval}</span>
                                             </div>
                                         </div>
-                                        {selectedStrategyId === s.id && strategies.length > 1 && (
-                                            <button 
-                                                onClick={(e) => { e.stopPropagation(); onRemoveStrategy(s.id); }} 
-                                                className="p-1 text-slate-300 hover:text-rose-500 transition-colors"
-                                                title="删除策略"
-                                            >
-                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-                                            </button>
-                                        )}
+                                        
+                                        <div className="flex items-center">
+                                            {selectedStrategyId === s.id && strategies.length > 1 && (
+                                                <button 
+                                                    onClick={(e) => { e.stopPropagation(); onRemoveStrategy(s.id); }} 
+                                                    className="p-0.5 text-slate-300 hover:text-rose-500 transition-colors"
+                                                >
+                                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                                                </button>
+                                            )}
+                                        </div>
                                     </div>
                                 );
                             })}
@@ -175,7 +178,7 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
                                 </div>
                             </div>
                             
-                            {/* 延后开仓新增配置 */}
+                            {/* 延后开仓配置 */}
                             <div className="bg-blue-50 p-2 rounded border border-blue-100">
                                 <Toggle label="延后开仓 (EMA7/25)" checked={activeConfig.useDelayedEntry} onChange={(v: boolean) => handleChange('useDelayedEntry', v)} className="font-bold text-blue-700 mb-2" />
                                 {activeConfig.useDelayedEntry && (
@@ -277,6 +280,17 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
                                         </div>
                                     )}
                                 </div>
+                                <div className="bg-slate-50 p-2 rounded border border-slate-100">
+                                    <Toggle label="EMA 7/25 vs 99" checked={activeConfig.useEMADouble} onChange={(v: boolean) => handleChange('useEMADouble', v)} className="mb-2 font-bold text-amber-600"/>
+                                    {activeConfig.useEMADouble && (
+                                        <div className="grid grid-cols-2 gap-2 border-t border-slate-200 pt-2">
+                                            <Toggle label="上穿开多" checked={activeConfig.emaDoubleLong} onChange={(v: boolean) => handleChange('emaDoubleLong', v)} size="sm" />
+                                            <Toggle label="下穿开空" checked={activeConfig.emaDoubleShort} onChange={(v: boolean) => handleChange('emaDoubleShort', v)} size="sm" />
+                                            <Toggle label="下穿平多" checked={activeConfig.emaDoubleExitLong} onChange={(v: boolean) => handleChange('emaDoubleExitLong', v)} size="sm" />
+                                            <Toggle label="上穿平空" checked={activeConfig.emaDoubleExitShort} onChange={(v: boolean) => handleChange('emaDoubleExitShort', v)} size="sm" />
+                                        </div>
+                                    )}
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -344,7 +358,7 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
 
 const Input = ({ label, value, onChange, type = "text", placeholder, ...props }: any) => (
   <div className="mb-2">
-    {label && <label className="block text-slate-600 text-xs mb-1 font-medium">{label}</label>}
+    {label && <label className="block text-slate-600 text-xs mb-1 font-medium uppercase">{label}</label>}
     <input 
       type={type} 
       value={value} 
@@ -358,7 +372,7 @@ const Input = ({ label, value, onChange, type = "text", placeholder, ...props }:
 
 const Select = ({ label, value, options, onChange }: any) => (
   <div className="mb-2">
-    <label className="block text-slate-600 text-xs mb-1 font-medium">{label}</label>
+    <label className="block text-slate-600 text-xs mb-1 font-medium uppercase">{label}</label>
     <select value={value} onChange={(e) => onChange(e.target.value)} className="w-full bg-white border border-slate-300 rounded p-1.5 text-xs text-slate-900 focus:border-blue-500 outline-none shadow-sm">
       {options.map((o: any) => <option key={o} value={o}>{o}</option>)}
     </select>
