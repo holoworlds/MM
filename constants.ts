@@ -37,6 +37,7 @@ export const DEFAULT_CONFIG: StrategyConfig = {
   manualTakeover: false,
   takeoverDirection: 'FLAT',
   takeoverQuantity: 1.0,
+  takeoverEntryPrice: 0, // 初始化
   takeoverTimestamp: '',
 
   trendFilterBlockShort: false,

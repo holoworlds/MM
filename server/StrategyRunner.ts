@@ -83,13 +83,11 @@ export class StrategyRunner {
         }
 
         // 2. 手动接管（仓位注入语义）
-        // 如果开启手动接管，将 UI 指定的真实持仓参数强行注入系统 runtime
-        // 注入后，系统将停止自动开仓，但会根据注入的 entryPrice 和数量继续运行平仓/止盈止损逻辑
         if (newConfig.manualTakeover) {
             this.runtime.positionState = {
                 ...this.runtime.positionState,
                 direction: newConfig.takeoverDirection,
-                entryPrice: newConfig.takeoverQuantity > 0 ? (this.runtime.positionState.entryPrice || this.runtime.lastPrice) : 0,
+                entryPrice: newConfig.takeoverEntryPrice || this.runtime.lastPrice,
                 initialQuantity: newConfig.takeoverQuantity,
                 remainingQuantity: newConfig.takeoverQuantity,
                 highestPrice: this.runtime.lastPrice,
@@ -97,7 +95,6 @@ export class StrategyRunner {
                 openTime: this.runtime.positionState.openTime || Date.now()
             };
             
-            // 如果接管方向是 FLAT，重置所有状态
             if (newConfig.takeoverDirection === 'FLAT') {
                 this.runtime.positionState = { ...INITIAL_POS_STATE };
             }

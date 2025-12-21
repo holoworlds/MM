@@ -59,7 +59,6 @@ export const evaluateStrategy = (
 
   // B. 每日限额检查
   const isAtTradeLimit = nextStats.dailyTradeCount >= config.maxDailyTrades;
-  const isSameCandleAction = tradeStats.lastActionCandleTime === currentCandleTime;
 
   if (last.ema7 === undefined || last.ema25 === undefined || last.ema99 === undefined) {
     return { newPositionState: nextPos, newTradeStats: nextStats, actions };
@@ -68,8 +67,6 @@ export const evaluateStrategy = (
   // ---------------------------------------------------------
   // 第二层：平仓逻辑 (Exit Execution Layer)
   // ---------------------------------------------------------
-  // 即使在 manualTakeover 模式下，也要运行平仓逻辑，除非手动接管是指“全手动”
-  // 这里实现为：手动接管开启后，系统不再自动开仓，但会根据注入的持仓参数继续运行风控与自动平仓
   
   let exitReason = '';
   let exitQuantity = 0;
@@ -117,7 +114,7 @@ export const evaluateStrategy = (
         }
     }
 
-    // 4. 指标反转平仓 (组合判断)
+    // 4. 指标反转平仓
     if (!exitReason) {
         if (isLong) {
             if (config.useEMA7_25 && config.ema7_25_ExitLong && crossUnder(last.ema7, last.ema25, prev.ema7!, prev.ema25!)) {
@@ -165,7 +162,6 @@ export const evaluateStrategy = (
               pendingSignal: 'NONE' 
             };
             nextStats.lastActionCandleTime = currentCandleTime;
-            // 平仓也计入每日限制
             nextStats.dailyTradeCount++;
         } else {
             nextPos.remainingQuantity -= actualQty;
@@ -179,36 +175,31 @@ export const evaluateStrategy = (
   let detectedDir: 'LONG' | 'SHORT' | 'NONE' = 'NONE';
   let detectedReason = '';
 
-  // 关键修正：如果开启手动接管，屏蔽所有自动信号的开仓
+  // 手动接管模式下仅屏蔽自动开仓
   const entryBlockedByManual = config.manualTakeover;
 
   if (nextPos.direction === 'FLAT' && !isAtTradeLimit && !entryBlockedByManual) {
-      // 允许在平仓后的同一根K线执行反手
-      const canEntryNow = (tradeStats.lastActionCandleTime !== currentCandleTime) || forceReverse;
+      const canActOnThisCandle = forceReverse || tradeStats.lastActionCandleTime !== currentCandleTime;
 
-      if (canEntryNow) {
-          // EMA 7/25 交叉
+      if (canActOnThisCandle) {
           if (config.useEMA7_25) {
               if (config.ema7_25_Long && crossOver(last.ema7, last.ema25, prev.ema7!, prev.ema25!)) { detectedDir = 'LONG'; detectedReason = 'EMA7/25金叉'; }
               else if (config.ema7_25_Short && crossUnder(last.ema7, last.ema25, prev.ema7!, prev.ema25!)) { detectedDir = 'SHORT'; detectedReason = 'EMA7/25死叉'; }
           }
-          // EMA 7/99 交叉
           if (detectedDir === 'NONE' && config.useEMA7_99) {
               if (config.ema7_99_Long && crossOver(last.ema7, last.ema99, prev.ema7!, prev.ema99!)) { detectedDir = 'LONG'; detectedReason = 'EMA7/99金叉'; }
-              else if (detectedDir === 'NONE' && config.ema7_99_Short && crossUnder(last.ema7, last.ema99, prev.ema7!, prev.ema99!)) { detectedDir = 'SHORT'; detectedReason = 'EMA7/99死叉'; }
+              else if (config.ema7_99_Short && crossUnder(last.ema7, last.ema99, prev.ema7!, prev.ema99!)) { detectedDir = 'SHORT'; detectedReason = 'EMA7/99死叉'; }
           }
-          // EMA 25/99 交叉
           if (detectedDir === 'NONE' && config.useEMA25_99) {
               if (config.ema25_99_Long && crossOver(last.ema25, last.ema99, prev.ema25!, prev.ema99!)) { detectedDir = 'LONG'; detectedReason = 'EMA25/99金叉'; }
-              else if (detectedDir === 'NONE' && config.ema25_99_Short && crossUnder(last.ema25, last.ema99, prev.ema25!, prev.ema99!)) { detectedDir = 'SHORT'; detectedReason = 'EMA25/99死叉'; }
+              else if (config.ema25_99_Short && crossUnder(last.ema25, last.ema99, prev.ema25!, prev.ema99!)) { detectedDir = 'SHORT'; detectedReason = 'EMA25/99死叉'; }
           }
-          // MACD 交叉
           if (detectedDir === 'NONE' && config.useMACD) {
               if (config.macdLong && crossOver(last.macdLine!, last.macdSignal!, prev.macdLine!, prev.macdSignal!)) { detectedDir = 'LONG'; detectedReason = 'MACD金叉'; }
-              else if (detectedDir === 'NONE' && config.macdShort && crossUnder(last.macdLine!, last.macdSignal!, prev.macdLine!, prev.macdSignal!)) { detectedDir = 'SHORT'; detectedReason = 'MACD死叉'; }
+              else if (config.macdShort && crossUnder(last.macdLine!, last.macdSignal!, prev.macdLine!, prev.macdSignal!)) { detectedDir = 'SHORT'; detectedReason = 'MACD死叉'; }
           }
           
-          if (forceReverse) {
+          if (forceReverse && detectedDir !== 'NONE') {
               detectedReason = `[反手] ${detectedReason}`;
           }
       }
@@ -219,12 +210,10 @@ export const evaluateStrategy = (
   // ---------------------------------------------------------
   
   if (detectedDir === 'LONG' && config.trendFilterBlockLong) {
-      const isTrendBullish = last.ema7 > last.ema25 && last.ema25 > last.ema99;
-      if (!isTrendBullish) detectedDir = 'NONE';
+      if (!(last.ema7 > last.ema25 && last.ema25 > last.ema99)) detectedDir = 'NONE';
   }
   if (detectedDir === 'SHORT' && config.trendFilterBlockShort) {
-      const isTrendBearish = last.ema7 < last.ema25 && last.ema25 < last.ema99;
-      if (!isTrendBearish) detectedDir = 'NONE';
+      if (!(last.ema7 < last.ema25 && last.ema25 < last.ema99)) detectedDir = 'NONE';
   }
 
   if (detectedDir !== 'NONE' && config.useDelayedEntry) {
@@ -237,12 +226,8 @@ export const evaluateStrategy = (
               nextPos.delayedEntryCurrentCount++;
               nextPos.lastCountedSignalTime = last.time;
           }
-          if (nextPos.delayedEntryCurrentCount < config.delayedEntryTargetCount) {
-              detectedDir = 'NONE';
-          }
-      } else {
-          detectedDir = 'NONE';
-      }
+          if (nextPos.delayedEntryCurrentCount < config.delayedEntryTargetCount) detectedDir = 'NONE';
+      } else detectedDir = 'NONE';
   }
 
   if (detectedDir !== 'NONE' && config.usePriceReturnEMA7) {

@@ -91,7 +91,7 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
                                             <div className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${s.isActive ? 'bg-emerald-500 animate-pulse' : 'bg-slate-300'}`}></div>
                                             <span className={`text-[10px] font-bold truncate shrink-0 max-w-[60px] ${selectedStrategyId === s.id ? 'text-blue-700' : 'text-slate-700'}`}>{s.name}</span>
                                             
-                                            {/* 持仓状态标签 - 极致缩小 */}
+                                            {/* 持仓状态标签 */}
                                             {dir === 'LONG' && <span className="text-[8px] bg-emerald-500 text-white px-0.5 rounded font-bold leading-tight flex-shrink-0">多</span>}
                                             {dir === 'SHORT' && <span className="text-[8px] bg-rose-500 text-white px-0.5 rounded font-bold leading-tight flex-shrink-0">空</span>}
                                             
@@ -162,6 +162,7 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
                         </div>
                         <div className="space-y-3 bg-white p-3 rounded border border-orange-100">
                              <Select label="持仓方向" value={activeConfig.takeoverDirection} options={['FLAT', 'LONG', 'SHORT']} onChange={(v: string) => handleChange('takeoverDirection', v)} />
+                             <Input label="入场成本价" type="number" step="0.0001" value={activeConfig.takeoverEntryPrice} onChange={(v: string) => handleChange('takeoverEntryPrice', parseFloat(v))} />
                              <Input label="持仓数量" type="number" value={activeConfig.takeoverQuantity} onChange={(v: string) => handleChange('takeoverQuantity', parseFloat(v))} />
                         </div>
                     </div>

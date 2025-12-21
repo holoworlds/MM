@@ -66,6 +66,7 @@ export interface StrategyConfig {
   manualTakeover: boolean;
   takeoverDirection: 'LONG' | 'SHORT' | 'FLAT';
   takeoverQuantity: number;
+  takeoverEntryPrice: number; // 新增：显式手动入场价格
   takeoverTimestamp: string;
   trendFilterBlockShort: boolean;
   trendFilterBlockLong: boolean;
@@ -112,11 +113,10 @@ export interface StrategyConfig {
   reverseLongToShort: boolean;
   reverseShortToLong: boolean;
   maxDailyTrades: number;
-  // 新增：延后开仓功能
   useDelayedEntry: boolean;
   delayedEntryTargetCount: number;
   delayedEntryActivationTime: number; 
-  delayedEntryType: 'LONG' | 'SHORT' | 'BOTH'; // 新增：延后方向选择
+  delayedEntryType: 'LONG' | 'SHORT' | 'BOTH';
 }
 
 export interface PositionState {
@@ -131,7 +131,6 @@ export interface PositionState {
   openTime: number;
   tpLevelsHit: boolean[]; 
   slLevelsHit: boolean[]; 
-  // 新增：延后开仓计数
   delayedEntryCurrentCount: number;
   lastCountedSignalTime: number; 
 }
