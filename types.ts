@@ -7,6 +7,21 @@ export type IntervalType =
 
 export type MarketType = 'CRYPTO';
 
+export enum StrategyState {
+  IDLE = 'IDLE',
+  SIGNAL_QUALIFIED = 'SIGNAL_QUALIFIED',
+  ENTRY_ARMED = 'ENTRY_ARMED',
+  IN_POSITION_LONG = 'IN_POSITION_LONG',
+  IN_POSITION_SHORT = 'IN_POSITION_SHORT',
+  MANUAL_TAKEOVER_LONG = 'MANUAL_TAKEOVER_LONG',
+  MANUAL_TAKEOVER_SHORT = 'MANUAL_TAKEOVER_SHORT',
+  EXIT_PENDING = 'EXIT_PENDING'
+}
+
+export type SignalSourceType = 'EMA7_25' | 'EMA7_99' | 'EMA25_99' | 'MACD' | 'DOUBLE_EMA' | 'NONE';
+
+export interface SystemConfig {}
+
 export interface Candle {
   symbol: string;
   time: number;
@@ -50,12 +65,11 @@ export interface AlertLog {
   type: string;
 }
 
-export interface SystemConfig {}
-
 export interface StrategyConfig {
   id: string;
   name: string;
   isActive: boolean;
+  activationTime?: number;
   market: MarketType;
   symbol: SymbolType;
   interval: IntervalType;
@@ -64,9 +78,9 @@ export interface StrategyConfig {
   secret: string;
   triggerOnClose: boolean;
   manualTakeover: boolean;
-  takeoverDirection: 'LONG' | 'SHORT' | 'FLAT';
+  takeoverDirection: 'LONG' | 'SHORT';
   takeoverQuantity: number;
-  takeoverEntryPrice: number; // 新增：显式手动入场价格
+  takeoverEntryPrice: number; 
   takeoverTimestamp: string;
   trendFilterBlockShort: boolean;
   trendFilterBlockLong: boolean;
@@ -79,7 +93,7 @@ export interface StrategyConfig {
   macdExitLong: boolean;
   macdExitShort: boolean;
   usePriceReturnEMA7: boolean;
-  priceReturnDist: number;
+  priceReturnBelowEma7Pct: number; 
   useEMA7_25: boolean; 
   ema7_25_Long: boolean;
   ema7_25_Short: boolean;
@@ -113,16 +127,15 @@ export interface StrategyConfig {
   reverseLongToShort: boolean;
   reverseShortToLong: boolean;
   maxDailyTrades: number;
-  useDelayedEntry: boolean;
-  delayedEntryTargetCount: number;
-  delayedEntryActivationTime: number; 
-  delayedEntryType: 'LONG' | 'SHORT' | 'BOTH';
 }
 
 export interface PositionState {
+  state: StrategyState;
   direction: 'LONG' | 'SHORT' | 'FLAT';
   pendingSignal: 'LONG' | 'SHORT' | 'NONE'; 
   pendingSignalSource?: string;
+  pendingSignalType: SignalSourceType;
+  pendingSignalCandleTime?: number;
   initialQuantity: number; 
   remainingQuantity: number; 
   entryPrice: number;
@@ -131,8 +144,6 @@ export interface PositionState {
   openTime: number;
   tpLevelsHit: boolean[]; 
   slLevelsHit: boolean[]; 
-  delayedEntryCurrentCount: number;
-  lastCountedSignalTime: number; 
 }
 
 export interface TradeStats {

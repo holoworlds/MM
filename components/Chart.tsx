@@ -21,7 +21,7 @@ interface ChartProps {
   symbol: string;
   interval: string;
   market: MarketType;
-  delayedEntryActivationTime?: number; // 新增：延后开仓激活时间
+  manualTakeoverTime?: number; 
 }
 
 const formatXAxis = (tickItem: number) => {
@@ -52,7 +52,7 @@ const CustomTooltip = ({ active, payload, label }: any) => {
   return null;
 };
 
-const Chart: React.FC<ChartProps> = ({ data, logs, symbol, interval, market, delayedEntryActivationTime }) => {
+const Chart: React.FC<ChartProps> = ({ data, logs, symbol, interval, market, manualTakeoverTime }) => {
   const processedData = useMemo(() => {
      return data.map(d => ({
         ...d,
@@ -61,9 +61,9 @@ const Chart: React.FC<ChartProps> = ({ data, logs, symbol, interval, market, del
      }));
   }, [data]);
 
-  // 综合标记：成交信号 + 延后开仓旗帜
+  // 综合标记：成交信号 + 手动接管旗帜
   const markers = useMemo(() => {
-    const tradeMarkers = logs.map(log => {
+    const tradeMarkers: any[] = logs.map(log => {
         const logTime = log.timestamp;
         let closestCandle = null;
         for(let i = data.length - 1; i >= 0; i--) {
@@ -78,27 +78,27 @@ const Chart: React.FC<ChartProps> = ({ data, logs, symbol, interval, market, del
         };
     }).filter(Boolean);
 
-    // 如果开启了延后开仓，增加旗帜
-    if (delayedEntryActivationTime && delayedEntryActivationTime > 0) {
-        let activationCandle = null;
+    // 手动接管旗帜 (橙色)
+    if (manualTakeoverTime && manualTakeoverTime > 0) {
+        let takeoverCandle = null;
         for(let i = data.length - 1; i >= 0; i--) {
-            if (data[i].time <= delayedEntryActivationTime) { activationCandle = data[i]; break; }
+            if (data[i].time <= manualTakeoverTime) { takeoverCandle = data[i]; break; }
         }
-        if (activationCandle) {
+        if (takeoverCandle) {
             tradeMarkers.push({
-                id: 'delayed-flag',
-                x: activationCandle.time,
-                y: activationCandle.high + (activationCandle.high * 0.001),
+                id: 'takeover-flag',
+                x: takeoverCandle.time,
+                y: takeoverCandle.high + (takeoverCandle.high * 0.002),
                 type: 'flag',
                 label: '🚩',
-                color: '#3b82f6',
+                color: '#f97316',
                 size: 0
             });
         }
     }
 
-    return tradeMarkers as any[];
-  }, [logs, data, delayedEntryActivationTime]);
+    return tradeMarkers;
+  }, [logs, data, manualTakeoverTime]);
 
   const minPrice = useMemo(() => data.length > 0 ? Math.min(...data.map(d => d.low)) : 0, [data]);
   const maxPrice = useMemo(() => data.length > 0 ? Math.max(...data.map(d => d.high)) : 0, [data]);

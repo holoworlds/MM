@@ -1,7 +1,7 @@
 
 import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { io, Socket } from 'socket.io-client';
-import { StrategyConfig, AlertLog, PositionState, TradeStats, StrategyRuntime, Candle, SystemConfig } from './types';
+import { StrategyConfig, AlertLog, PositionState, TradeStats, StrategyRuntime, Candle, SystemConfig, StrategyState } from './types';
 import { DEFAULT_CONFIG } from './constants';
 import Chart from './components/Chart';
 import ControlPanel from './components/ControlPanel';
@@ -16,9 +16,11 @@ const SERVER_URL = isProduction
   : undefined;
 
 const INITIAL_POS_STATE: PositionState = {
+    state: StrategyState.IDLE,
     direction: 'FLAT', 
     pendingSignal: 'NONE',
     pendingSignalSource: '',
+    pendingSignalType: 'NONE',
     initialQuantity: 0,
     remainingQuantity: 0,
     entryPrice: 0, 
@@ -26,9 +28,7 @@ const INITIAL_POS_STATE: PositionState = {
     lowestPrice: 0, 
     openTime: 0, 
     tpLevelsHit: new Array(4).fill(false), 
-    slLevelsHit: new Array(4).fill(false),
-    delayedEntryCurrentCount: 0,
-    lastCountedSignalTime: 0
+    slLevelsHit: new Array(4).fill(false)
 };
 const INITIAL_STATS: TradeStats = { dailyTradeCount: 0, lastTradeDate: '', lastActionCandleTime: 0 };
 
@@ -115,6 +115,11 @@ const App: React.FC = () => {
              }
              return prevId;
         });
+    });
+
+    // 关键：监听后端通知新策略添加并自动跳转
+    socket.on('strategy_added', (id: string) => {
+        setActiveStrategyId(id);
     });
     
     socket.on('state_update', ({ id, runtime }: { id: string, runtime: StrategyRuntime }) => {
@@ -240,6 +245,10 @@ const App: React.FC = () => {
   };
 
   const activeStrategyLogs = logs.filter(l => l.strategyId === activeStrategyId);
+  
+  // 仅在手动接管状态下传递标记时间
+  const isManual = activeStrategy.positionState.state.startsWith('MANUAL_TAKEOVER');
+  const manualTakeoverTime = isManual ? activeStrategy.positionState.openTime : undefined;
 
   return (
     <div className="flex h-screen w-full bg-slate-50 text-slate-900 overflow-hidden font-sans">
@@ -289,7 +298,7 @@ const App: React.FC = () => {
                 symbol={activeStrategy.config.symbol}
                 interval={activeStrategy.config.interval}
                 market={activeStrategy.config.market}
-                delayedEntryActivationTime={activeStrategy.config.delayedEntryActivationTime}
+                manualTakeoverTime={manualTakeoverTime}
              />
           </div>
         </div>
@@ -305,6 +314,7 @@ const App: React.FC = () => {
            <LogPanel 
              logs={logs} 
              strategies={Object.values(strategies).map((s: StrategyRuntime) => ({ id: s.config.id, name: s.config.name, symbol: s.config.symbol }))}
+             onSelectStrategy={setActiveStrategyId}
            />
         </div>
       </div>

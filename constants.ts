@@ -35,9 +35,9 @@ export const DEFAULT_CONFIG: StrategyConfig = {
   triggerOnClose: true,
 
   manualTakeover: false,
-  takeoverDirection: 'FLAT',
-  takeoverQuantity: 1.0,
-  takeoverEntryPrice: 0, // 初始化
+  takeoverDirection: 'LONG',
+  takeoverQuantity: 0,
+  takeoverEntryPrice: 0, 
   takeoverTimestamp: '',
 
   trendFilterBlockShort: false,
@@ -55,7 +55,7 @@ export const DEFAULT_CONFIG: StrategyConfig = {
 
   // 2. Price Return EMA7
   usePriceReturnEMA7: false,
-  priceReturnDist: 0.1, // 0.1%
+  priceReturnBelowEma7Pct: 0.1, 
 
   // 3. EMA 7/25
   useEMA7_25: true, 
@@ -78,7 +78,7 @@ export const DEFAULT_CONFIG: StrategyConfig = {
   ema25_99_ExitLong: false,
   ema25_99_ExitShort: false,
 
-  // 6. Double EMA (7/25 vs 99)
+  // 6. EMA 7/25 vs 99 (Double EMA)
   useEMADouble: false,
   emaDoubleLong: false,
   emaDoubleShort: false,
@@ -113,11 +113,5 @@ export const DEFAULT_CONFIG: StrategyConfig = {
   reverseLongToShort: true,
   reverseShortToLong: true,
 
-  maxDailyTrades: 5,
-
-  // 延后开仓
-  useDelayedEntry: false,
-  delayedEntryTargetCount: 1,
-  delayedEntryActivationTime: 0,
-  delayedEntryType: 'BOTH'
+  maxDailyTrades: 5
 };

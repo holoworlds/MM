@@ -28,15 +28,12 @@ const PORT = 3001;
 // --- Server State ---
 const strategies: Record<string, StrategyRunner> = {};
 let logs: any[] = [];
-// Empty System Config
 let systemConfig: SystemConfig = {};
 
-// --- Persistence Helpers ---
 function saveSystemState() {
     try {
         const validStrategies = Object.values(strategies).filter(s => s && typeof s.getSnapshot === 'function');
         const strategySnapshots = validStrategies.map(s => s.getSnapshot());
-        
         if (strategySnapshots.length > 0) {
             FileStore.save('strategies', strategySnapshots);
         }
@@ -46,73 +43,41 @@ function saveSystemState() {
     }
 }
 
-// --- Initialization with Recovery ---
 async function initializeSystem() {
     console.log('[System] Initializing...');
-
-    // 0.5 Pre-warm Data (Background Collection)
-    console.log(`[System] Pre-warming data for: ${PRELOAD_SYMBOLS.join(', ')}`);
     for (const symbol of PRELOAD_SYMBOLS) {
         dataEngine.ensureActive(symbol).catch(err => console.error(`[System] Pre-warm failed for ${symbol}`, err)); 
     }
-
-    // 1. Restore Logs
     const savedLogs = FileStore.load<any[]>('logs');
-    if (savedLogs && Array.isArray(savedLogs)) {
-        logs = savedLogs;
-        console.log(`[System] Restored ${logs.length} historical logs.`);
-    }
+    if (savedLogs && Array.isArray(savedLogs)) logs = savedLogs;
 
-    // 2. Restore Strategies
     const savedSnapshots = FileStore.load<any[]>('strategies');
     if (savedSnapshots && Array.isArray(savedSnapshots) && savedSnapshots.length > 0) {
-        console.log(`[System] Restoring ${savedSnapshots.length} strategies from disk...`);
-        
         for (const snapshot of savedSnapshots) {
             try {
-                const sanitizedConfig = { 
-                    ...DEFAULT_CONFIG, 
-                    ...snapshot.config,
-                    market: 'CRYPTO' 
-                };
-
+                const sanitizedConfig = { ...DEFAULT_CONFIG, ...snapshot.config, market: 'CRYPTO' };
                 const runner = new StrategyRunner(
                     sanitizedConfig,
-                    (id, runtime) => {
-                        broadcastUpdate(id, runtime);
-                    },
-                    (log) => {
-                        addLog(log);
-                        saveSystemState(); 
-                    }
+                    (id, runtime) => broadcastUpdate(id, runtime),
+                    (log) => { addLog(log); saveSystemState(); }
                 );
-
-                if (snapshot.positionState && snapshot.tradeStats) {
-                    runner.restoreState(snapshot.positionState, snapshot.tradeStats);
-                }
-
+                if (snapshot.positionState && snapshot.tradeStats) runner.restoreState(snapshot.positionState, snapshot.tradeStats);
                 strategies[sanitizedConfig.id] = runner;
                 await runner.start();
             } catch (err) {
-                console.error(`[System] Failed to restore strategy ${snapshot?.config?.id}:`, err);
+                console.error(`[System] Failed to restore strategy:`, err);
             }
         }
     } else {
-        console.log('[System] No saved state found. Starting default strategy.');
         const defaultRunner = new StrategyRunner(
             DEFAULT_CONFIG, 
             (id, runtime) => broadcastUpdate(id, runtime),
-            (log) => {
-                addLog(log);
-                saveSystemState();
-            }
+            (log) => { addLog(log); saveSystemState(); }
         );
         strategies[DEFAULT_CONFIG.id] = defaultRunner;
         defaultRunner.start();
     }
 }
-
-// --- Helper Functions ---
 
 function broadcastUpdate(id: string, runtime: StrategyRuntime) {
     io.emit('state_update', { id, runtime });
@@ -121,11 +86,8 @@ function broadcastUpdate(id: string, runtime: StrategyRuntime) {
 function broadcastFullState(socketId?: string) {
     const fullState: Record<string, StrategyRuntime> = {};
     Object.keys(strategies).forEach(id => {
-        if (strategies[id]) {
-            fullState[id] = strategies[id].runtime;
-        }
+        if (strategies[id]) fullState[id] = strategies[id].runtime;
     });
-    
     if (socketId) {
         io.to(socketId).emit('full_state', fullState);
         io.to(socketId).emit('logs_update', logs);
@@ -136,54 +98,34 @@ function broadcastFullState(socketId?: string) {
 }
 
 function addLog(log: any) {
-    logs = [log, ...logs].slice(0, 500); // Keep last 500
+    logs = [log, ...logs].slice(0, 500);
     io.emit('log_new', log);
 }
 
-// --- Socket.io Handlers ---
-
 io.on('connection', (socket) => {
-    console.log('Frontend Connected:', socket.id);
-
-    // Send initial data
     broadcastFullState(socket.id);
-
-    // Explicit sync request
-    socket.on('cmd_sync_state', () => {
-        console.log(`[Socket] Manual sync requested by ${socket.id}`);
-        broadcastFullState(socket.id);
-    });
-
-    // Strategy handlers
+    socket.on('cmd_sync_state', () => broadcastFullState(socket.id));
     socket.on('cmd_update_config', ({ id, updates }: { id: string, updates: Partial<StrategyConfig> }) => {
         const runner = strategies[id];
         if (runner) {
-            const newConfig = { ...runner.runtime.config, ...updates };
-            runner.updateConfig(newConfig);
+            runner.updateConfig({ ...runner.runtime.config, ...updates });
             saveSystemState();
-            console.log(`Updated strategy config for ${id}`);
         }
     });
-
     socket.on('cmd_add_strategy', () => {
         const newId = Math.random().toString(36).substr(2, 9);
         const newConfig = { ...DEFAULT_CONFIG, id: newId, name: `策略 #${Object.keys(strategies).length + 1}` };
-        
         const newRunner = new StrategyRunner(
             newConfig,
             (id, runtime) => broadcastUpdate(id, runtime),
-            (log) => {
-                addLog(log);
-                saveSystemState();
-            }
+            (log) => { addLog(log); saveSystemState(); }
         );
         strategies[newId] = newRunner;
         newRunner.start();
         saveSystemState(); 
-        
         broadcastFullState();
+        socket.emit('strategy_added', newId);
     });
-
     socket.on('cmd_remove_strategy', (id: string) => {
         if (strategies[id]) {
             strategies[id].stop();
@@ -192,27 +134,15 @@ io.on('connection', (socket) => {
             broadcastFullState();
         }
     });
-
     socket.on('cmd_manual_order', ({ id, type }: { id: string, type: 'LONG'|'SHORT'|'FLAT' }) => {
         if (strategies[id]) {
             strategies[id].handleManualOrder(type);
             saveSystemState();
         }
     });
-
-    socket.on('error', (err) => {
-        console.error(`[Socket] Socket error for ${socket.id}:`, err);
-    });
 });
 
-setInterval(() => {
-    saveSystemState();
-}, 60000); // Save every minute
-
+setInterval(() => saveSystemState(), 60000);
 initializeSystem().then(() => {
-    server.listen(PORT, () => {
-        console.log(`Backend Strategy Server running on port ${PORT}`);
-    });
-}).catch(err => {
-    console.error('[System] Critical failure during initialization:', err);
-});
+    server.listen(PORT, () => console.log(`Backend Server running on port ${PORT}`));
+}).catch(err => console.error(err));

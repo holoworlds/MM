@@ -1,9 +1,11 @@
+
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { AlertLog } from '../types';
 
 interface LogPanelProps {
   logs: AlertLog[];
   strategies: { id: string; name: string; symbol: string }[];
+  onSelectStrategy?: (id: string) => void;
 }
 
 // 音频上下文单例
@@ -82,7 +84,7 @@ const playBeep = () => {
   }
 };
 
-const LogPanel: React.FC<LogPanelProps> = ({ logs, strategies }) => {
+const LogPanel: React.FC<LogPanelProps> = ({ logs, strategies, onSelectStrategy }) => {
   const [filterId, setFilterId] = useState<string>('all');
   const prevLogsLength = useRef(logs.length);
 
@@ -186,7 +188,12 @@ const LogPanel: React.FC<LogPanelProps> = ({ logs, strategies }) => {
                 const { date, time } = formatDateTime(log.timestamp);
                 
                 return (
-                  <tr key={log.id} className="hover:bg-slate-50 transition-colors text-slate-700">
+                  <tr 
+                    key={log.id} 
+                    onDoubleClick={() => onSelectStrategy?.(log.strategyId)}
+                    className="hover:bg-slate-50 transition-colors text-slate-700 cursor-pointer select-none"
+                    title="双击以在概览中选中此策略"
+                  >
                     <td className="p-3">
                       <div className="text-slate-500 truncate" title={`${date} ${time}`}>
                         {date}

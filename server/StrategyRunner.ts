@@ -1,13 +1,16 @@
 
-import { StrategyConfig, StrategyRuntime, Candle, PositionState, TradeStats, WebhookPayload } from "../types";
+import { StrategyConfig, StrategyRuntime, Candle, PositionState, TradeStats, WebhookPayload, StrategyState } from "../types";
 import { enrichCandlesWithIndicators } from "../services/indicatorService";
 import { evaluateStrategy } from "../services/strategyEngine";
 import { dataEngine } from "./DataEngine";
 
 const INITIAL_POS_STATE: PositionState = {
+    state: StrategyState.IDLE,
     direction: 'FLAT', 
     pendingSignal: 'NONE',
     pendingSignalSource: '',
+    pendingSignalType: 'NONE',
+    pendingSignalCandleTime: 0,
     initialQuantity: 0,
     remainingQuantity: 0,
     entryPrice: 0, 
@@ -15,9 +18,7 @@ const INITIAL_POS_STATE: PositionState = {
     lowestPrice: 0, 
     openTime: 0, 
     tpLevelsHit: new Array(4).fill(false), 
-    slLevelsHit: new Array(4).fill(false),
-    delayedEntryCurrentCount: 0,
-    lastCountedSignalTime: 0
+    slLevelsHit: new Array(4).fill(false)
 };
 
 const INITIAL_STATS: TradeStats = { 
@@ -52,7 +53,6 @@ export class StrategyRunner {
         this.isWarmupPhase = true;
         this.subscriptionId++;
         const currentSid = this.subscriptionId;
-
         await dataEngine.subscribe(
             this.runtime.config.id,
             this.runtime.config.symbol,
@@ -71,98 +71,70 @@ export class StrategyRunner {
     }
 
     public updateConfig(newConfig: StrategyConfig) {
-        const oldSymbol = this.runtime.config.symbol;
-        const oldInterval = this.runtime.config.interval;
-        
-        // 1. 延后开仓初始化
-        if (newConfig.useDelayedEntry && !this.runtime.config.useDelayedEntry) {
-            this.runtime.positionState.delayedEntryCurrentCount = 0;
-            this.runtime.positionState.lastCountedSignalTime = 0;
-            const lastCandle = this.runtime.candles[this.runtime.candles.length - 1];
-            newConfig.delayedEntryActivationTime = lastCandle ? lastCandle.time : Date.now();
+        // 记录启动时间
+        if (newConfig.isActive && !this.runtime.config.isActive) {
+            newConfig.activationTime = Date.now();
         }
 
-        // 2. 手动接管（仓位注入语义）
-        if (newConfig.manualTakeover) {
+        // 处理手动接管
+        if (newConfig.manualTakeover && !this.runtime.config.manualTakeover) {
             this.runtime.positionState = {
                 ...this.runtime.positionState,
+                state: newConfig.takeoverDirection === 'LONG' ? StrategyState.MANUAL_TAKEOVER_LONG : StrategyState.MANUAL_TAKEOVER_SHORT,
                 direction: newConfig.takeoverDirection,
-                entryPrice: newConfig.takeoverEntryPrice || this.runtime.lastPrice,
-                initialQuantity: newConfig.takeoverQuantity,
-                remainingQuantity: newConfig.takeoverQuantity,
-                highestPrice: this.runtime.lastPrice,
-                lowestPrice: this.runtime.lastPrice,
-                openTime: this.runtime.positionState.openTime || Date.now()
+                entryPrice: newConfig.takeoverEntryPrice || 0,
+                initialQuantity: newConfig.takeoverQuantity || 0,
+                remainingQuantity: newConfig.takeoverQuantity || 0,
+                openTime: Date.now()
             };
-            
-            if (newConfig.takeoverDirection === 'FLAT') {
-                this.runtime.positionState = { ...INITIAL_POS_STATE };
-            }
+        } else if (!newConfig.manualTakeover && this.runtime.config.manualTakeover) {
+            // 取消接管，重置状态
+            this.runtime.positionState = { ...INITIAL_POS_STATE };
         }
 
         this.runtime.config = newConfig;
-
-        if (newConfig.symbol !== oldSymbol || newConfig.interval !== oldInterval) {
-            this.stop();
-            this.runtime.candles = []; 
-            this.emitUpdate(); 
-            this.start();
-        } else {
-            this.emitUpdate();
-        }
+        this.emitUpdate();
     }
 
     public restoreState(position: PositionState, stats: TradeStats) {
-        this.runtime.positionState = { 
-            ...INITIAL_POS_STATE,
-            ...position, 
-            pendingSignal: position.pendingSignal || 'NONE' 
-        };
+        this.runtime.positionState = { ...INITIAL_POS_STATE, ...position };
         this.runtime.tradeStats = stats;
     }
 
     public getSnapshot() {
-        return {
-            config: this.runtime.config,
-            positionState: this.runtime.positionState,
-            tradeStats: this.runtime.tradeStats
-        };
+        return { config: this.runtime.config, positionState: this.runtime.positionState, tradeStats: this.runtime.tradeStats };
     }
 
     private handleDataUpdate(candles: Candle[]) {
         if (candles.length === 0) return;
         this.runtime.lastPrice = candles[candles.length - 1].close;
-
         const enriched = enrichCandlesWithIndicators(candles, {
             macdFast: this.runtime.config.macdFast,
             macdSlow: this.runtime.config.macdSlow,
             macdSignal: this.runtime.config.macdSignal
         });
         this.runtime.candles = enriched;
-
+        
         const result = evaluateStrategy(enriched, this.runtime.config, this.runtime.positionState, this.runtime.tradeStats);
-
-        if (this.isWarmupPhase) {
-            result.actions = [];
-            this.isWarmupPhase = false;
+        
+        if (this.isWarmupPhase) { 
+            result.actions = []; 
+            this.isWarmupPhase = false; 
         }
 
         this.runtime.positionState = result.newPositionState;
         this.runtime.tradeStats = result.newTradeStats;
 
         if (result.actions.length > 0) {
-            this.emitUpdate(); 
             result.actions.forEach(action => this.sendWebhook(action));
-        } else {
-            this.emitUpdate();
         }
+        this.emitUpdate();
     }
 
     public handleManualOrder(type: 'LONG' | 'SHORT' | 'FLAT') {
         const price = this.runtime.lastPrice;
         if (price === 0) return;
         const qty = this.runtime.config.tradeAmount / price;
-        
         const payload: WebhookPayload = {
             secret: this.runtime.config.secret,
             action: type === 'LONG' ? 'buy' : type === 'SHORT' ? 'sell' : 'flat',
@@ -172,18 +144,18 @@ export class StrategyRunner {
             trade_amount: qty * price,
             timestamp: new Date().toISOString(),
             strategy_name: this.runtime.config.name,
-            tp_level: '手动下单 (Manual Order)',
+            tp_level: '手动面板指令',
             execution_price: price,
             execution_quantity: qty
         };
-
+        
         if (type === 'FLAT') {
             this.runtime.positionState = { ...INITIAL_POS_STATE };
         } else {
             this.runtime.positionState = {
                 ...INITIAL_POS_STATE,
+                state: type === 'LONG' ? StrategyState.MANUAL_TAKEOVER_LONG : StrategyState.MANUAL_TAKEOVER_SHORT,
                 direction: type,
-                pendingSignal: 'NONE', 
                 initialQuantity: qty,
                 remainingQuantity: qty,
                 entryPrice: price,
@@ -191,7 +163,6 @@ export class StrategyRunner {
             };
             this.runtime.tradeStats.dailyTradeCount++;
         }
-        
         this.sendWebhook(payload);
         this.emitUpdate();
     }
@@ -202,7 +173,9 @@ export class StrategyRunner {
             strategyId: this.runtime.config.id,
             strategyName: this.runtime.config.name,
             timestamp: Date.now(),
-            payload, status: 'sent', type: payload.tp_level?.includes('手动') ? 'Manual' : 'Strategy'
+            payload, 
+            status: 'sent', 
+            type: payload.tp_level?.includes('手动') ? 'Manual' : 'Strategy'
         };
         this.onLog(logEntry);
         if (this.runtime.config.webhookUrl) {
@@ -210,11 +183,9 @@ export class StrategyRunner {
                 method: 'POST', 
                 headers: { 'Content-Type': 'application/json' }, 
                 body: JSON.stringify(payload) 
-            }).catch(e => console.error("[Webhook] Error", e));
+            }).catch(e => console.error("[Webhook Error]", e));
         }
     }
 
-    private emitUpdate() {
-        this.onUpdate(this.runtime.config.id, this.runtime);
-    }
+    private emitUpdate() { this.onUpdate(this.runtime.config.id, this.runtime); }
 }

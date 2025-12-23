@@ -28,7 +28,6 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
   onAddStrategy,
   onRemoveStrategy,
   lastPrice, 
-  onManualOrder, 
   positionStatus,
   allRuntimes
 }) => {
@@ -45,72 +44,68 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
       updateConfig(activeConfig.id, { [arrayKey]: newArray });
   };
 
-  const getStatusText = (status: string) => {
-    if (status === 'LONG') return '多头持仓';
-    if (status === 'SHORT') return '空头持仓';
-    return '空仓 (Flat)';
+  const formatActivationTime = (ts?: number) => {
+    if (!ts) return '';
+    const date = new Date(ts);
+    const m = (date.getMonth() + 1).toString().padStart(2, '0');
+    const d = date.getDate().toString().padStart(2, '0');
+    const h = date.getHours().toString().padStart(2, '0');
+    const min = date.getMinutes().toString().padStart(2, '0');
+    return `${m}${d}-${h}:${min}`;
   }
 
-  const currentSymbols = CRYPTO_SYMBOLS;
-
   return (
-    <div className="bg-white rounded-lg border border-slate-200 h-full flex shadow-sm overflow-hidden text-slate-800">
+    <div className="bg-white rounded-lg border border-slate-200 h-full flex shadow-sm overflow-hidden text-slate-800 font-sans text-[11px]">
         
-        {/* SIDEBAR STRIP */}
-        <div className="w-12 bg-slate-100 border-r border-slate-200 flex flex-col items-center py-4 gap-4 flex-shrink-0">
-            <button onClick={() => setActiveTab('dashboard')} className={`p-2 rounded-lg transition-all ${activeTab === 'dashboard' ? 'bg-blue-600 text-white shadow' : 'text-slate-400 hover:bg-slate-200 hover:text-slate-600'}`}>
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" /></svg>
+        {/* SIDEBAR */}
+        <div className="w-10 bg-slate-100 border-r border-slate-200 flex flex-col items-center py-4 gap-4 flex-shrink-0">
+            <button onClick={() => setActiveTab('dashboard')} className={`p-1.5 rounded-lg transition-all ${activeTab === 'dashboard' ? 'bg-blue-600 text-white shadow' : 'text-slate-400 hover:bg-slate-200 hover:text-slate-600'}`}>
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" /></svg>
             </button>
-            <button onClick={() => setActiveTab('config')} className={`p-2 rounded-lg transition-all ${activeTab === 'config' ? 'bg-blue-600 text-white shadow' : 'text-slate-400 hover:bg-slate-200 hover:text-slate-600'}`}>
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+            <button onClick={() => setActiveTab('config')} className={`p-1.5 rounded-lg transition-all ${activeTab === 'config' ? 'bg-blue-600 text-white shadow' : 'text-slate-400 hover:bg-slate-200 hover:text-slate-600'}`}>
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
             </button>
         </div>
 
-        {/* CONTENT AREA */}
-        <div className="flex-1 overflow-y-auto custom-scrollbar bg-slate-50/50 p-4">
+        {/* CONTENT */}
+        <div className="flex-1 overflow-y-auto custom-scrollbar bg-slate-50/50 p-3">
             
             {/* VIEW 1: DASHBOARD */}
             {activeTab === 'dashboard' && (
-                <div className="space-y-6">
+                <div className="space-y-4">
                     <div className="bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden">
                         <div className="flex justify-between items-center px-3 py-2 border-b border-slate-100 bg-slate-50">
-                            <h2 className="text-slate-800 font-bold text-xs uppercase tracking-wider">策略概览</h2>
+                            <h2 className="text-slate-800 font-bold text-[10px] uppercase tracking-wider">策略概览</h2>
                             <button onClick={onAddStrategy} className="bg-blue-600 hover:bg-blue-500 text-white px-2 py-0.5 rounded text-[10px] shadow-sm transition-colors">+ 添加</button>
                         </div>
-                        <div className="max-h-64 overflow-y-auto custom-scrollbar divide-y divide-slate-50">
+                        <div className="max-h-60 overflow-y-auto custom-scrollbar divide-y divide-slate-50">
                             {strategies.map(s => {
                                 const runtime = allRuntimes?.[s.id];
                                 const dir = runtime?.positionState?.direction || 'FLAT';
                                 return (
-                                    <div 
-                                      key={s.id} 
-                                      onClick={() => onSelectStrategy(s.id)} 
-                                      className={`p-1 px-3 cursor-pointer transition-all flex items-center justify-between gap-1.5 ${selectedStrategyId === s.id ? 'bg-blue-50/80 ring-inset ring-1 ring-blue-100' : 'hover:bg-slate-50'}`}
-                                    >
-                                        <div className="flex items-center gap-1.5 min-w-0 flex-1 flex-nowrap overflow-hidden">
-                                            <div className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${s.isActive ? 'bg-emerald-500 animate-pulse' : 'bg-slate-300'}`}></div>
-                                            <span className={`text-[10px] font-bold truncate shrink-0 max-w-[60px] ${selectedStrategyId === s.id ? 'text-blue-700' : 'text-slate-700'}`}>{s.name}</span>
-                                            
-                                            {/* 持仓状态标签 */}
-                                            {dir === 'LONG' && <span className="text-[8px] bg-emerald-500 text-white px-0.5 rounded font-bold leading-tight flex-shrink-0">多</span>}
-                                            {dir === 'SHORT' && <span className="text-[8px] bg-rose-500 text-white px-0.5 rounded font-bold leading-tight flex-shrink-0">空</span>}
-                                            
-                                            <div className="flex items-center gap-1 flex-shrink-0 opacity-70 border-l border-slate-200 pl-1.5">
-                                                <span className="text-[9px] text-slate-500 font-mono truncate">{s.symbol.replace('USDT', '')}</span>
-                                                <span className="text-[9px] text-slate-400 font-mono uppercase">{s.interval}</span>
+                                    <div key={s.id} onClick={() => onSelectStrategy(s.id)} className={`p-2 px-3 cursor-pointer transition-all flex items-center justify-between gap-1.5 ${selectedStrategyId === s.id ? 'bg-blue-50 ring-inset ring-1 ring-blue-100' : 'hover:bg-slate-50'}`}>
+                                        <div className="flex items-center gap-2 min-w-0 flex-1">
+                                            <div className={`w-2 h-2 rounded-full flex-shrink-0 ${s.isActive ? 'bg-emerald-500 animate-pulse' : 'bg-slate-300'}`}></div>
+                                            <div className="flex flex-col min-w-0 flex-1">
+                                                <div className="flex items-center justify-between gap-2 min-w-0">
+                                                    <span className="text-[11px] font-bold truncate flex-1 text-slate-700">{s.name}</span>
+                                                    {s.activationTime && (
+                                                        <span className="text-[9px] text-slate-500 font-mono flex-shrink-0 bg-slate-100 px-1 border border-slate-200 rounded leading-tight">
+                                                          {formatActivationTime(s.activationTime)}
+                                                        </span>
+                                                    )}
+                                                </div>
+                                                <span className="text-[10px] text-slate-400 font-mono uppercase truncate">{s.symbol} · {s.interval}</span>
                                             </div>
+                                            {dir !== 'FLAT' && <span className={`text-[9px] px-1 rounded font-bold shrink-0 text-white ${dir === 'LONG' ? 'bg-emerald-500' : 'bg-rose-500'}`}>{dir === 'LONG' ? '多' : '空'}</span>}
                                         </div>
-                                        
-                                        <div className="flex items-center flex-shrink-0">
-                                            {selectedStrategyId === s.id && strategies.length > 1 && (
-                                                <button 
-                                                    onClick={(e) => { e.stopPropagation(); onRemoveStrategy(s.id); }} 
-                                                    className="p-0.5 text-slate-300 hover:text-rose-500 transition-colors"
-                                                >
-                                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-                                                </button>
-                                            )}
-                                        </div>
+                                        <button 
+                                          onClick={(e) => { e.stopPropagation(); onRemoveStrategy(s.id); }}
+                                          className="text-slate-300 hover:text-rose-500 p-1 transition-colors"
+                                          title="删除策略"
+                                        >
+                                          <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                                        </button>
                                     </div>
                                 );
                             })}
@@ -118,236 +113,211 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
                     </div>
 
                     <div className="bg-white p-3 rounded-lg border border-slate-200 shadow-sm space-y-3">
-                         <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-                             <span className="text-xs text-slate-600 font-bold">策略运行开关</span>
+                         <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+                             <span className="text-[11px] text-slate-600 font-bold uppercase tracking-tight">运行状态</span>
                              <Toggle checked={activeConfig.isActive} onChange={(v: boolean) => handleChange('isActive', v)} size="sm" />
                          </div>
-                         <div className="flex justify-between items-center">
+                         <div className="grid grid-cols-2 gap-4">
                             <div>
-                                <div className="text-xs text-slate-500 mb-1">当前持仓 ({activeConfig.symbol})</div>
-                                <div className={`text-sm font-bold ${positionStatus === 'FLAT' ? 'text-slate-400' : positionStatus === 'LONG' ? 'text-emerald-600' : 'text-rose-600'}`}>
-                                    {getStatusText(positionStatus)}
+                                <div className="text-[10px] text-slate-500 font-bold">当前持仓</div>
+                                <div className={`text-[12px] font-black ${positionStatus === 'LONG' ? 'text-emerald-600' : positionStatus === 'SHORT' ? 'text-rose-600' : 'text-slate-400'}`}>
+                                    {positionStatus === 'LONG' ? '多头持仓' : positionStatus === 'SHORT' ? '空头持仓' : '空仓 (Flat)'}
                                 </div>
                             </div>
                             <div className="text-right">
-                                <div className="text-xs text-slate-500 mb-1">最新价格</div>
-                                <div className="text-sm font-mono text-slate-900 font-bold">${lastPrice.toFixed(2)}</div>
+                                <div className="text-[10px] text-slate-500 font-bold">当前报价</div>
+                                <div className="text-[12px] font-black text-slate-900 font-mono">${lastPrice.toFixed(2)}</div>
                             </div>
                          </div>
                     </div>
 
-                    <div className="bg-white p-3 rounded-lg border border-slate-200 shadow-sm">
-                        <h3 className="text-xs font-bold text-slate-700 mb-3 border-b border-slate-100 pb-2">基础设置</h3>
-                        <div className="space-y-3">
-                            <Input label="策略名称" value={activeConfig.name} onChange={(v: string) => handleChange('name', v)} />
-                            <div>
-                                <label className="block text-slate-600 text-xs mb-1 font-medium">交易对</label>
-                                <input list="symbols" value={activeConfig.symbol} onChange={(e) => handleChange('symbol', e.target.value.toUpperCase())} className="w-full bg-white border border-slate-300 rounded p-1.5 text-xs text-slate-900 focus:border-blue-500 outline-none shadow-sm" placeholder="如 BTCUSDT"/>
-                                <datalist id="symbols">{currentSymbols.map(s => <option key={s} value={s} />)}</datalist>
-                            </div>
-                            <Select label="K线周期" value={activeConfig.interval} options={AVAILABLE_INTERVALS} onChange={(v: string) => handleChange('interval', v)} />
-                            <Input label="开仓金额 (U / USD)" type="number" value={activeConfig.tradeAmount} onChange={(v: string) => handleChange('tradeAmount', parseFloat(v))} />
+                    {/* BASIC CONFIG */}
+                    <div className="bg-white p-3 rounded-lg border border-slate-200 shadow-sm space-y-3">
+                        <h3 className="text-[10px] font-bold text-slate-700 border-b border-slate-100 pb-1 uppercase tracking-wider">基础策略设置</h3>
+                        <Input label="策略显示名称" value={activeConfig.name} onChange={(v: string) => handleChange('name', v)} />
+                        <div className="grid grid-cols-2 gap-2">
+                            <EditableSelect 
+                                label="币种 (Symbol)" 
+                                value={activeConfig.symbol} 
+                                options={CRYPTO_SYMBOLS} 
+                                onChange={(v: string) => handleChange('symbol', v)} 
+                            />
+                            <Select label="周期 (Interval)" value={activeConfig.interval} options={AVAILABLE_INTERVALS} onChange={(v: string) => handleChange('interval', v)} />
                         </div>
+                        <Input label="单笔交易金额 (U)" type="number" value={activeConfig.tradeAmount} onChange={(v: string) => handleChange('tradeAmount', parseFloat(v))} />
+                        <Input label="Webhook URL" value={activeConfig.webhookUrl} onChange={(v: string) => handleChange('webhookUrl', v)} />
                     </div>
                 </div>
             )}
 
-            {/* VIEW 2: STRATEGY CONFIGURATION */}
+            {/* VIEW 2: CONFIGURATION */}
             {activeTab === 'config' && (
-                <div className="space-y-6 pb-10">
+                <div className="space-y-5 pb-10">
+                    {/* MANUAL TAKEOVER PANEL */}
                     <div className="bg-orange-50 p-3 rounded-lg border border-orange-200 shadow-sm">
-                        <div className="flex justify-between items-center mb-3 border-b border-orange-200 pb-2">
-                            <h3 className="text-sm font-bold text-orange-700">手动接管 (Manual Takeover)</h3>
+                        <div className="flex justify-between items-center mb-2 border-b border-orange-200 pb-2">
+                            <h3 className="text-[11px] font-bold text-orange-700 uppercase tracking-tighter">手动接管 (Takeover)</h3>
                             <Toggle checked={activeConfig.manualTakeover} onChange={(v: boolean) => handleChange('manualTakeover', v)} />
                         </div>
-                        <div className="space-y-3 bg-white p-3 rounded border border-orange-100">
-                             <Select label="持仓方向" value={activeConfig.takeoverDirection} options={['FLAT', 'LONG', 'SHORT']} onChange={(v: string) => handleChange('takeoverDirection', v)} />
-                             <Input label="入场成本价" type="number" step="0.0001" value={activeConfig.takeoverEntryPrice} onChange={(v: string) => handleChange('takeoverEntryPrice', parseFloat(v))} />
-                             <Input label="持仓数量" type="number" value={activeConfig.takeoverQuantity} onChange={(v: string) => handleChange('takeoverQuantity', parseFloat(v))} />
+                        <div className="space-y-2 bg-white p-2 rounded border border-orange-100">
+                             <Select label="同步方向" value={activeConfig.takeoverDirection} options={['LONG', 'SHORT']} onChange={(v: string) => handleChange('takeoverDirection', v)} />
+                             <Input label="接管均价" type="number" step="0.0001" value={activeConfig.takeoverEntryPrice} onChange={(v: string) => handleChange('takeoverEntryPrice', parseFloat(v))} />
+                             <Input label="同步仓位数量" type="number" step="0.001" value={activeConfig.takeoverQuantity} onChange={(v: string) => handleChange('takeoverQuantity', parseFloat(v))} />
                         </div>
                     </div>
 
+                    {/* SIGNAL LOGIC ENGINE */}
                     <div className="bg-white p-3 rounded-lg border border-slate-200 shadow-sm">
-                        <h3 className="text-xs font-bold text-slate-700 mb-3 border-b border-slate-100 pb-2">信号配置</h3>
+                        <h3 className="text-[10px] font-bold text-slate-700 mb-3 border-b border-slate-100 pb-2 uppercase tracking-wider">信号与指标引擎</h3>
                         <div className="space-y-4">
-                            <div className="flex justify-between items-center bg-slate-50 p-2 rounded">
-                                <span className="text-xs font-bold text-slate-700">触发模式</span>
+                            <div className="flex justify-between items-center bg-slate-50 p-2 rounded border border-slate-200">
+                                <span className="text-[10px] font-bold text-slate-600 uppercase">触发时机模式</span>
                                 <div className="flex items-center gap-2">
-                                    <span className={`text-[10px] ${!activeConfig.triggerOnClose ? 'text-blue-600 font-bold' : 'text-slate-400'}`}>实时</span>
+                                    <span className={`text-[10px] transition-all font-bold ${!activeConfig.triggerOnClose ? 'text-blue-600' : 'text-slate-300'}`}>实时 (Tick)</span>
                                     <Toggle checked={activeConfig.triggerOnClose} onChange={(v: boolean) => handleChange('triggerOnClose', v)} size="sm" />
-                                    <span className={`text-[10px] ${activeConfig.triggerOnClose ? 'text-blue-600 font-bold' : 'text-slate-400'}`}>收盘</span>
+                                    <span className={`text-[10px] transition-all font-bold ${activeConfig.triggerOnClose ? 'text-blue-600' : 'text-slate-300'}`}>收盘 (Close)</span>
                                 </div>
+                            </div>
+
+                            <div className="bg-teal-50 p-2 rounded border border-teal-100">
+                                <Toggle label="EMA 7 价格回归 (点位穿越触发)" checked={activeConfig.usePriceReturnEMA7} onChange={(v: boolean) => handleChange('usePriceReturnEMA7', v)} className="mb-1 font-black text-teal-700"/>
+                                {activeConfig.usePriceReturnEMA7 && (
+                                    <div className="pt-1 border-t border-teal-200">
+                                        <Input label="回归触发阈值(正下负上) %" type="number" step="0.01" value={activeConfig.priceReturnBelowEma7Pct} onChange={(v: string) => handleChange('priceReturnBelowEma7Pct', parseFloat(v))} />
+                                        <div className="text-[8px] text-teal-600 italic leading-tight space-y-1 mt-1">
+                                          <p>逻辑：点位<b>瞬间穿过</b>目标线时触发 (Cross-into)</p>
+                                          <p>• <b>正数</b> (如 0.5)：价格从上方<b>跌破</b>“均线下方0.5%”时触发</p>
+                                          <p>• <b>负数</b> (如 -0.5)：价格从下方<b>涨破</b>“均线上方0.5%”时触发</p>
+                                        </div>
+                                    </div>
+                                )}
                             </div>
                             
-                            {/* 延后开仓配置 */}
-                            <div className="bg-blue-50 p-2 rounded border border-blue-100">
-                                <Toggle label="延后开仓 (EMA7/25)" checked={activeConfig.useDelayedEntry} onChange={(v: boolean) => handleChange('useDelayedEntry', v)} className="font-bold text-blue-700 mb-2" />
-                                {activeConfig.useDelayedEntry && (
-                                    <div className="space-y-2 border-t border-blue-200 pt-2">
-                                        <p className="text-[10px] text-blue-600">从激活起(🚩)，当第 N 次信号出现时才执行开仓。</p>
-                                        <div className="grid grid-cols-1 gap-2">
-                                          <div className="flex items-center gap-2">
-                                            <span className="text-[10px] text-slate-500 whitespace-nowrap">监测方向:</span>
-                                            <div className="flex-1">
-                                                <select 
-                                                  value={activeConfig.delayedEntryType} 
-                                                  onChange={(e) => handleChange('delayedEntryType', e.target.value)}
-                                                  className="w-full bg-white border border-blue-200 rounded p-1 text-[10px] text-blue-800 outline-none"
-                                                >
-                                                    <option value="BOTH">双向 (金叉+死叉)</option>
-                                                    <option value="LONG">仅记录上穿开多</option>
-                                                    <option value="SHORT">仅记录下穿开空</option>
-                                                </select>
-                                            </div>
-                                          </div>
-                                          <Input label="第 N 次信号触发" type="number" min="1" step="1" value={activeConfig.delayedEntryTargetCount} onChange={(v: string) => handleChange('delayedEntryTargetCount', parseInt(v))} />
-                                        </div>
-                                    </div>
-                                )}
+                            {/* 趋势过滤模块 (负向拦截约束) */}
+                            <div className="bg-emerald-50 p-2 rounded border border-emerald-100">
+                                <h4 className="text-[9px] font-bold text-emerald-700 uppercase mb-2 tracking-widest text-center">趋势过滤器 (负向硬性拦截)</h4>
+                                <div className="grid grid-cols-2 gap-2">
+                                    <Toggle label="禁止开多 (7<25<99)" checked={activeConfig.trendFilterBlockLong} onChange={(v: boolean) => handleChange('trendFilterBlockLong', v)} size="sm" />
+                                    <Toggle label="禁止开空 (7>25>99)" checked={activeConfig.trendFilterBlockShort} onChange={(v: boolean) => handleChange('trendFilterBlockShort', v)} size="sm" />
+                                </div>
+                                <p className="text-[8px] text-emerald-600 mt-1 italic text-center">系统检测到强单边趋势排列时，将强制拦截该方向的所有开仓行为</p>
                             </div>
 
-                            <div className="space-y-2">
-                                <div className="text-xs font-bold text-slate-600">趋势过滤</div>
-                                <Toggle label="7>25>99 不开空" checked={activeConfig.trendFilterBlockShort} onChange={(v: boolean) => handleChange('trendFilterBlockShort', v)} size="sm" className="bg-slate-50 p-2 rounded"/>
-                                <Toggle label="7<25<99 不开多" checked={activeConfig.trendFilterBlockLong} onChange={(v: boolean) => handleChange('trendFilterBlockLong', v)} size="sm" className="bg-slate-50 p-2 rounded"/>
-                            </div>
-
-                            {/* Indicators */}
                             <div className="bg-slate-50 p-2 rounded border border-slate-100">
-                                <Toggle label="启用 MACD" checked={activeConfig.useMACD} onChange={(v: boolean) => handleChange('useMACD', v)} className="mb-2 font-bold text-slate-800"/>
+                                <Toggle label="MACD 控制" checked={activeConfig.useMACD} onChange={(v: boolean) => handleChange('useMACD', v)} className="mb-2 font-black text-slate-800"/>
                                 {activeConfig.useMACD && (
-                                    <div className="space-y-2 mt-2 border-t border-slate-200 pt-2">
-                                        <div className="grid grid-cols-3 gap-2">
+                                    <div className="space-y-2 border-t border-slate-200 pt-2">
+                                        <div className="grid grid-cols-3 gap-2 mb-2">
                                             <Input label="Fast" type="number" value={activeConfig.macdFast} onChange={(v: string) => handleChange('macdFast', parseFloat(v))} />
                                             <Input label="Slow" type="number" value={activeConfig.macdSlow} onChange={(v: string) => handleChange('macdSlow', parseFloat(v))} />
-                                            <Input label="Sig" type="number" value={activeConfig.macdSignal} onChange={(v: string) => handleChange('macdSignal', parseFloat(v))} />
+                                            <Input label="Signal" type="number" value={activeConfig.macdSignal} onChange={(v: string) => handleChange('macdSignal', parseFloat(v))} />
                                         </div>
-                                        <div className="grid grid-cols-2 gap-2 mt-1">
-                                            <Toggle label="金叉开多" checked={activeConfig.macdLong} onChange={(v: boolean) => handleChange('macdLong', v)} size="sm" />
-                                            <Toggle label="死叉开空" checked={activeConfig.macdShort} onChange={(v: boolean) => handleChange('macdShort', v)} size="sm" />
-                                            <Toggle label="金叉平空" checked={activeConfig.macdExitShort} onChange={(v: boolean) => handleChange('macdExitShort', v)} size="sm" />
-                                            <Toggle label="死叉平多" checked={activeConfig.macdExitLong} onChange={(v: boolean) => handleChange('macdExitLong', v)} size="sm" />
+                                        <div className="grid grid-cols-2 gap-1 border border-slate-200 bg-white p-1 rounded">
+                                            <Toggle label="开多" checked={activeConfig.macdLong} onChange={(v: boolean) => handleChange('macdLong', v)} size="sm" />
+                                            <Toggle label="开空" checked={activeConfig.macdShort} onChange={(v: boolean) => handleChange('macdShort', v)} size="sm" />
+                                            <Toggle label="平多" checked={activeConfig.macdExitLong} onChange={(v: boolean) => handleChange('macdExitLong', v)} size="sm" />
+                                            <Toggle label="平空" checked={activeConfig.macdExitShort} onChange={(v: boolean) => handleChange('macdExitShort', v)} size="sm" />
                                         </div>
                                     </div>
                                 )}
                             </div>
 
-                            <div className="bg-slate-50 p-2 rounded border border-slate-100">
-                                <Toggle label="EMA7 价格回归" checked={activeConfig.usePriceReturnEMA7} onChange={(v: boolean) => handleChange('usePriceReturnEMA7', v)} className="mb-2 font-bold text-teal-600"/>
-                                {activeConfig.usePriceReturnEMA7 && (
-                                    <div className="space-y-2 mt-2 border-t border-slate-200 pt-2">
-                                        <Input 
-                                            label="允许回归距离 % (±)" 
-                                            type="number" 
-                                            step="0.01"
-                                            value={activeConfig.priceReturnDist} 
-                                            onChange={(v: string) => handleChange('priceReturnDist', parseFloat(v))} 
-                                        />
+                            {/* EMA CROSS COMBINATIONS */}
+                            {['7_25', '7_99', '25_99', 'Double'].map(cross => {
+                                const key = cross === 'Double' ? 'EMADouble' : `EMA${cross}`;
+                                const useKey = `use${key}` as keyof StrategyConfig;
+                                const propBase = cross === 'Double' ? 'emaDouble' : `ema${cross}_`;
+                                const label = cross === 'Double' ? 'EMA 7/25 vs 99' : `EMA ${cross.replace('_', '/')}`;
+                                
+                                return (
+                                    <div key={cross} className="bg-slate-50 p-2 rounded border border-slate-100">
+                                        <Toggle label={label} checked={activeConfig[useKey]} onChange={(v: boolean) => handleChange(useKey, v)} className="font-black text-blue-600 mb-1" />
+                                        {activeConfig[useKey] && (
+                                            <div className="grid grid-cols-2 gap-1 border-t border-slate-200 pt-2 bg-white p-1 rounded mt-1">
+                                                <Toggle label="开多" checked={activeConfig[`${propBase}Long` as keyof StrategyConfig]} onChange={(v: boolean) => handleChange(`${propBase}Long` as keyof StrategyConfig, v)} size="sm" />
+                                                <Toggle label="开空" checked={activeConfig[`${propBase}Short` as keyof StrategyConfig]} onChange={(v: boolean) => handleChange(`${propBase}Short` as keyof StrategyConfig, v)} size="sm" />
+                                                <Toggle label="平多" checked={activeConfig[`${propBase}ExitLong` as keyof StrategyConfig]} onChange={(v: boolean) => handleChange(`${propBase}ExitLong` as keyof StrategyConfig, v)} size="sm" />
+                                                <Toggle label="平空" checked={activeConfig[`${propBase}ExitShort` as keyof StrategyConfig]} onChange={(v: boolean) => handleChange(`${propBase}ExitShort` as keyof StrategyConfig, v)} size="sm" />
+                                            </div>
+                                        )}
                                     </div>
-                                )}
-                            </div>
-
-                            <div className="space-y-3">
-                                <div className="bg-slate-50 p-2 rounded border border-slate-100">
-                                    <Toggle label="EMA 7/25" checked={activeConfig.useEMA7_25} onChange={(v: boolean) => handleChange('useEMA7_25', v)} className="mb-2 font-bold text-blue-600"/>
-                                    {activeConfig.useEMA7_25 && (
-                                        <div className="grid grid-cols-2 gap-2 border-t border-slate-200 pt-2">
-                                            <Toggle label="上穿开多" checked={activeConfig.ema7_25_Long} onChange={(v: boolean) => handleChange('ema7_25_Long', v)} size="sm" />
-                                            <Toggle label="下穿开空" checked={activeConfig.ema7_25_Short} onChange={(v: boolean) => handleChange('ema7_25_Short', v)} size="sm" />
-                                            <Toggle label="下穿平多" checked={activeConfig.ema7_25_ExitLong} onChange={(v: boolean) => handleChange('ema7_25_ExitLong', v)} size="sm" />
-                                            <Toggle label="上穿平空" checked={activeConfig.ema7_25_ExitShort} onChange={(v: boolean) => handleChange('ema7_25_ExitShort', v)} size="sm" />
-                                        </div>
-                                    )}
-                                </div>
-                                <div className="bg-slate-50 p-2 rounded border border-slate-100">
-                                    <Toggle label="EMA 7/99" checked={activeConfig.useEMA7_99} onChange={(v: boolean) => handleChange('useEMA7_99', v)} className="mb-2 font-bold text-indigo-600"/>
-                                    {activeConfig.useEMA7_99 && (
-                                        <div className="grid grid-cols-2 gap-2 border-t border-slate-200 pt-2">
-                                            <Toggle label="上穿开多" checked={activeConfig.ema7_99_Long} onChange={(v: boolean) => handleChange('ema7_99_Long', v)} size="sm" />
-                                            <Toggle label="下穿开空" checked={activeConfig.ema7_99_Short} onChange={(v: boolean) => handleChange('ema7_99_Short', v)} size="sm" />
-                                            <Toggle label="下穿平多" checked={activeConfig.ema7_99_ExitLong} onChange={(v: boolean) => handleChange('ema7_99_ExitLong', v)} size="sm" />
-                                            <Toggle label="上穿平空" checked={activeConfig.ema7_99_ExitShort} onChange={(v: boolean) => handleChange('ema7_99_ExitShort', v)} size="sm" />
-                                        </div>
-                                    )}
-                                </div>
-                                <div className="bg-slate-50 p-2 rounded border border-slate-100">
-                                    <Toggle label="EMA 25/99" checked={activeConfig.useEMA25_99} onChange={(v: boolean) => handleChange('useEMA25_99', v)} className="mb-2 font-bold text-violet-600"/>
-                                    {activeConfig.useEMA25_99 && (
-                                        <div className="grid grid-cols-2 gap-2 border-t border-slate-200 pt-2">
-                                            <Toggle label="上穿开多" checked={activeConfig.ema25_99_Long} onChange={(v: boolean) => handleChange('ema25_99_Long', v)} size="sm" />
-                                            <Toggle label="下穿开空" checked={activeConfig.ema25_99_Short} onChange={(v: boolean) => handleChange('ema25_99_Short', v)} size="sm" />
-                                            <Toggle label="下穿平多" checked={activeConfig.ema25_99_ExitLong} onChange={(v: boolean) => handleChange('ema25_99_ExitLong', v)} size="sm" />
-                                            <Toggle label="上穿平空" checked={activeConfig.ema25_99_ExitShort} onChange={(v: boolean) => handleChange('ema25_99_ExitShort', v)} size="sm" />
-                                        </div>
-                                    )}
-                                </div>
-                                <div className="bg-slate-50 p-2 rounded border border-slate-100">
-                                    <Toggle label="EMA 7/25 vs 99" checked={activeConfig.useEMADouble} onChange={(v: boolean) => handleChange('useEMADouble', v)} className="mb-2 font-bold text-amber-600"/>
-                                    {activeConfig.useEMADouble && (
-                                        <div className="grid grid-cols-2 gap-2 border-t border-slate-200 pt-2">
-                                            <Toggle label="上穿开多" checked={activeConfig.emaDoubleLong} onChange={(v: boolean) => handleChange('emaDoubleLong', v)} size="sm" />
-                                            <Toggle label="下穿开空" checked={activeConfig.emaDoubleShort} onChange={(v: boolean) => handleChange('emaDoubleShort', v)} size="sm" />
-                                            <Toggle label="下穿平多" checked={activeConfig.emaDoubleExitLong} onChange={(v: boolean) => handleChange('emaDoubleExitLong', v)} size="sm" />
-                                            <Toggle label="上穿平空" checked={activeConfig.emaDoubleExitShort} onChange={(v: boolean) => handleChange('emaDoubleExitShort', v)} size="sm" />
-                                        </div>
-                                    )}
-                                </div>
-                            </div>
+                                )
+                            })}
                         </div>
                     </div>
 
-                    {/* RISK & EXIT */}
+                    {/* RISK AND PROFIT MANAGEMENT */}
                     <div className="bg-white p-3 rounded-lg border border-slate-200 shadow-sm">
-                        <h3 className="text-xs font-bold text-slate-700 mb-3 border-b border-slate-100 pb-2">出场 & 风控</h3>
-                        <div className="space-y-3">
-                             <div className="bg-slate-50 p-2 rounded border border-slate-100">
-                                <Toggle label="追踪止盈" checked={activeConfig.useTrailingStop} onChange={(v: boolean) => handleChange('useTrailingStop', v)} className="font-bold mb-2 text-slate-800" />
+                        <h3 className="text-[10px] font-bold text-slate-700 mb-3 border-b border-slate-100 pb-2 uppercase tracking-wider">退出与风险管理</h3>
+                        <div className="space-y-4">
+                            <div className="bg-slate-50 p-2 rounded border border-slate-100">
+                                <Toggle label="追踪止盈 (Trailing Stop)" checked={activeConfig.useTrailingStop} onChange={(v: boolean) => handleChange('useTrailingStop', v)} className="font-black mb-2 text-slate-800" />
                                 {activeConfig.useTrailingStop && (
                                     <div className="grid grid-cols-2 gap-2 border-t border-slate-200 pt-2">
-                                        <Input label="激活比例 %" type="number" step="0.1" value={activeConfig.trailActivation} onChange={(v: string) => handleChange('trailActivation', parseFloat(v))} />
-                                        <Input label="回撤距离 %" type="number" step="0.1" value={activeConfig.trailDistance} onChange={(v: string) => handleChange('trailDistance', parseFloat(v))} />
+                                        <Input label="启动偏差 %" type="number" step="0.1" value={activeConfig.trailActivation} onChange={(v: string) => handleChange('trailActivation', parseFloat(v))} />
+                                        <Input label="回吐距离 %" type="number" step="0.1" value={activeConfig.trailDistance} onChange={(v: string) => handleChange('trailDistance', parseFloat(v))} />
                                     </div>
                                 )}
                             </div>
-                             <div className="bg-slate-50 p-2 rounded border border-slate-100">
-                                <Toggle label="固定止盈止损" checked={activeConfig.useFixedTPSL} onChange={(v: boolean) => handleChange('useFixedTPSL', v)} className="font-bold mb-2 text-slate-800" />
+
+                            <div className="bg-slate-50 p-2 rounded border border-slate-100">
+                                <Toggle label="全仓固定止盈止损" checked={activeConfig.useFixedTPSL} onChange={(v: boolean) => handleChange('useFixedTPSL', v)} className="font-black mb-2 text-slate-800" />
                                 {activeConfig.useFixedTPSL && (
                                     <div className="grid grid-cols-2 gap-2 border-t border-slate-200 pt-2">
-                                        <Input label="止盈 %" type="number" step="0.1" value={activeConfig.takeProfitPct} onChange={(v: string) => handleChange('takeProfitPct', parseFloat(v))} />
-                                        <Input label="止损 %" type="number" step="0.1" value={activeConfig.stopLossPct} onChange={(v: string) => handleChange('stopLossPct', parseFloat(v))} />
+                                        <Input label="止盈目标 %" type="number" step="0.1" value={activeConfig.takeProfitPct} onChange={(v: string) => handleChange('takeProfitPct', parseFloat(v))} />
+                                        <Input label="止损限制 %" type="number" step="0.1" value={activeConfig.stopLossPct} onChange={(v: string) => handleChange('stopLossPct', parseFloat(v))} />
                                     </div>
                                 )}
                             </div>
+
+                            {/* MULTI LEVEL TP/SL PANEL */}
                             <div className="bg-slate-50 p-2 rounded border border-slate-100">
-                                <Toggle label="多级止盈止损" checked={activeConfig.useMultiTPSL} onChange={(v: boolean) => handleChange('useMultiTPSL', v)} className="font-bold mb-2 text-slate-800" />
+                                <Toggle label="4级分段止盈止损" checked={activeConfig.useMultiTPSL} onChange={(v: boolean) => handleChange('useMultiTPSL', v)} className="font-black mb-2 text-slate-800" />
                                 {activeConfig.useMultiTPSL && (
-                                    <div className="space-y-4 border-t border-slate-200 pt-2">
+                                    <div className="space-y-5 border-t border-slate-200 pt-2">
                                         <div>
-                                            <div className="text-[10px] font-bold text-emerald-600 mb-1">分批止盈</div>
-                                            {activeConfig.tpLevels.map((tp: any, idx: number) => (
-                                                <div key={`tp-${idx}`} className="flex items-center gap-2 mb-1">
-                                                    <span className="text-[10px] w-4 text-slate-500">#{idx+1}</span>
-                                                    <div className="w-16"><Input type="number" step="0.1" value={tp.pct} onChange={(v: string) => handleArrayChange('tpLevels', idx, 'pct', parseFloat(v))} /></div>
-                                                    <span className="text-[10px] text-slate-400">%价</span>
-                                                    <div className="w-16"><Input type="number" step="1" value={tp.qtyPct} onChange={(v: string) => handleArrayChange('tpLevels', idx, 'qtyPct', parseFloat(v))} /></div>
-                                                    <span className="text-[10px] text-slate-400">%量</span>
+                                            <div className="text-[9px] font-bold text-emerald-600 mb-1 uppercase tracking-widest border-l-2 border-emerald-600 pl-1">分段止盈 (Take Profit)</div>
+                                            {activeConfig.tpLevels.map((tp, idx) => (
+                                                <div key={`tp-${idx}`} className="flex items-center gap-1 mb-1.5 bg-white p-1 rounded border border-slate-100 shadow-sm">
+                                                    <span className="w-4 text-[9px] text-slate-400 font-mono">#{idx+1}</span>
+                                                    <input type="number" step="0.1" value={tp.pct} onChange={(e) => handleArrayChange('tpLevels', idx, 'pct', parseFloat(e.target.value))} className="w-10 bg-transparent text-[10px] text-center border-b border-slate-200" />
+                                                    <span className="text-[8px] text-slate-400">%价</span>
+                                                    <input type="number" step="1" value={tp.qtyPct} onChange={(e) => handleArrayChange('tpLevels', idx, 'qtyPct', parseFloat(e.target.value))} className="w-10 bg-transparent text-[10px] text-center border-b border-slate-200" />
+                                                    <span className="text-[8px] text-slate-400">%仓</span>
                                                     <Toggle checked={tp.active} onChange={(v: boolean) => handleArrayChange('tpLevels', idx, 'active', v)} size="sm" />
+                                                </div>
+                                            ))}
+                                        </div>
+                                        <div className="pt-2 border-t border-slate-200">
+                                            <div className="text-[9px] font-bold text-rose-600 mb-1 uppercase tracking-widest border-l-2 border-rose-600 pl-1">分段止损 (Stop Loss)</div>
+                                            {activeConfig.slLevels.map((sl, idx) => (
+                                                <div key={`sl-${idx}`} className="flex items-center gap-1 mb-1.5 bg-white p-1 rounded border border-slate-100 shadow-sm">
+                                                    <span className="w-4 text-[9px] text-slate-400 font-mono">#{idx+1}</span>
+                                                    <input type="number" step="0.1" value={sl.pct} onChange={(e) => handleArrayChange('slLevels', idx, 'pct', parseFloat(e.target.value))} className="w-10 bg-transparent text-[10px] text-center border-b border-slate-200" />
+                                                    <span className="text-[8px] text-slate-400">%价</span>
+                                                    <input type="number" step="1" value={sl.qtyPct} onChange={(e) => handleArrayChange('slLevels', idx, 'qtyPct', parseFloat(e.target.value))} className="w-10 bg-transparent text-[10px] text-center border-b border-slate-200" />
+                                                    <span className="text-[8px] text-slate-400">%仓</span>
+                                                    <Toggle checked={sl.active} onChange={(v: boolean) => handleArrayChange('slLevels', idx, 'active', v)} size="sm" />
                                                 </div>
                                             ))}
                                         </div>
                                     </div>
                                 )}
                             </div>
-                            <div className="bg-slate-50 p-2 rounded border border-slate-100">
-                                <Toggle label="反手策略" checked={activeConfig.useReverse} onChange={(v: boolean) => handleChange('useReverse', v)} className="font-bold mb-2 text-purple-600" />
+
+                            <div className="bg-purple-50 p-2 rounded border border-purple-100">
+                                <Toggle label="趋势反手策略 (Reverse)" checked={activeConfig.useReverse} onChange={(v: boolean) => handleChange('useReverse', v)} className="font-black mb-2 text-purple-700" />
                                 {activeConfig.useReverse && (
-                                    <div className="grid grid-cols-2 gap-2 border-t border-slate-200 pt-2">
+                                    <div className="grid grid-cols-2 gap-2 border-t border-purple-200 pt-2">
                                         <Toggle label="多转空" checked={activeConfig.reverseLongToShort} onChange={(v: boolean) => handleChange('reverseLongToShort', v)} size="sm" />
                                         <Toggle label="空转多" checked={activeConfig.reverseShortToLong} onChange={(v: boolean) => handleChange('reverseShortToLong', v)} size="sm" />
                                     </div>
                                 )}
                             </div>
-                            <Input label="日最大交易数" type="number" value={activeConfig.maxDailyTrades} onChange={(v: string) => handleChange('maxDailyTrades', parseFloat(v))} />
+
+                            <div className="bg-slate-50 p-2 rounded border border-slate-100">
+                                <Input label="单日最大总开仓数" type="number" min="1" value={activeConfig.maxDailyTrades} onChange={(v: string) => handleChange('maxDailyTrades', parseFloat(v))} />
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -357,34 +327,48 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
   );
 };
 
-const Input = ({ label, value, onChange, type = "text", placeholder, ...props }: any) => (
-  <div className="mb-2">
-    {label && <label className="block text-slate-600 text-xs mb-1 font-medium uppercase">{label}</label>}
-    <input 
-      type={type} 
-      value={value} 
-      onChange={(e) => onChange(e.target.value)} 
-      placeholder={placeholder}
-      className="w-full bg-white border border-slate-300 rounded p-1.5 text-xs text-slate-900 focus:border-blue-500 outline-none shadow-sm"
-      {...props}
-    />
+const Input = ({ label, value, onChange, type = "text", ...props }: any) => (
+  <div className="mb-1.5 text-left">
+    {label && <label className="block text-slate-500 text-[9px] mb-0.5 font-bold uppercase tracking-tight">{label}</label>}
+    <input type={type} value={value} onChange={(e) => onChange(e.target.value)} className="w-full bg-white border border-slate-300 rounded p-1 text-[10px] text-slate-900 focus:border-blue-500 outline-none shadow-sm font-medium" {...props} />
   </div>
 );
 
+// 带下拉建议的可输入币种选择器
+const EditableSelect = ({ label, value, options, onChange }: any) => {
+    const listId = `list-${label.replace(/\s+/g, '-')}`;
+    return (
+        <div className="mb-1.5 text-left relative">
+            <label className="block text-slate-500 text-[9px] mb-0.5 font-bold uppercase tracking-tight">{label}</label>
+            <input 
+                list={listId}
+                value={value} 
+                onChange={(e) => onChange(e.target.value.toUpperCase())}
+                placeholder="输入或选择..."
+                className="w-full bg-white border border-slate-300 rounded p-1 text-[10px] text-slate-900 focus:border-blue-500 outline-none shadow-sm font-medium"
+            />
+            <datalist id={listId}>
+                {options.map((o: string) => <option key={o} value={o} />)}
+            </datalist>
+            <div className="absolute right-1 top-5 text-[9px] text-slate-300 pointer-events-none">▼</div>
+        </div>
+    );
+};
+
 const Select = ({ label, value, options, onChange }: any) => (
-  <div className="mb-2">
-    <label className="block text-slate-600 text-xs mb-1 font-medium uppercase">{label}</label>
-    <select value={value} onChange={(e) => onChange(e.target.value)} className="w-full bg-white border border-slate-300 rounded p-1.5 text-xs text-slate-900 focus:border-blue-500 outline-none shadow-sm">
+  <div className="mb-1.5 text-left">
+    <label className="block text-slate-500 text-[9px] mb-0.5 font-bold uppercase tracking-tight">{label}</label>
+    <select value={value} onChange={(e) => onChange(e.target.value)} className="w-full bg-white border border-slate-300 rounded p-1 text-[10px] text-slate-900 focus:border-blue-500 outline-none shadow-sm font-medium">
       {options.map((o: any) => <option key={o} value={o}>{o}</option>)}
     </select>
   </div>
 );
 
 const Toggle = ({ label, checked, onChange, size = "md", className = "" }: any) => (
-  <div className={`flex items-center justify-between ${className}`}>
-    <span className={`text-slate-700 font-medium ${size === 'sm' ? 'text-xs' : 'text-sm'}`}>{label}</span>
-    <button onClick={() => onChange(!checked)} className={`relative inline-flex items-center rounded-full transition-colors shadow-inner ${checked ? 'bg-blue-600' : 'bg-slate-300'} ${size === 'sm' ? 'h-4 w-8' : 'h-6 w-11'}`}>
-      <span className={`inline-block transform rounded-full bg-white transition-transform shadow-sm ${size === 'sm' ? 'h-3 w-3' : 'h-4 w-4'} ${checked ? (size === 'sm' ? 'translate-x-4' : 'translate-x-6') : 'translate-x-1'}`} />
+  <div className={`flex items-center justify-between gap-2 ${className}`}>
+    {label && <span className={`text-slate-600 font-bold uppercase tracking-tighter ${size === 'sm' ? 'text-[9px]' : 'text-[10px]'}`}>{label}</span>}
+    <button onClick={() => onChange(!checked)} className={`relative inline-flex items-center rounded-full transition-all ${checked ? 'bg-blue-600' : 'bg-slate-300'} ${size === 'sm' ? 'h-3.5 w-7' : 'h-5 w-10'} shadow-inner`}>
+      <span className={`inline-block transform rounded-full bg-white transition-transform shadow-md ${size === 'sm' ? 'h-2.5 w-2.5' : 'h-4 w-4'} ${checked ? (size === 'sm' ? 'translate-x-3.5' : 'translate-x-5.5') : 'translate-x-0.5'}`} />
     </button>
   </div>
 );
