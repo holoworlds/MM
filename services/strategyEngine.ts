@@ -84,27 +84,26 @@ export const evaluateStrategy = (
 
   const last = candles[candles.length - 1];
   const prev = candles[candles.length - 2];
-  
-  const isEventTriggered = config.triggerOnClose ? last.isClosed : true;
-  if (!isEventTriggered) return { newPositionState: nextPos, newTradeStats: nextStats, actions };
 
   switch (nextPos.state) {
     case StrategyState.IDLE: {
       if (config.manualTakeover) break;
+      
+      // 指标信号检测受收盘设置约束
+      if (config.triggerOnClose && !last.isClosed) break;
+
       const { openDir, type } = scanSignals(config, last, prev);
       
       if (openDir !== 'NONE') {
-        // --- 全局趋势拦截过滤 (基于负向逻辑) ---
-        // 做多拦截：当排列为 7 < 25 < 99 时，拦截一切做多信号
+        // --- 负向趋势拦截 ---
         if (openDir === 'LONG' && config.trendFilterBlockLong) {
             if (last.ema7! < last.ema25! && last.ema25! < last.ema99!) break;
         }
-        // 做空拦截：当排列为 7 > 25 > 99 时，拦截一切做空信号
         if (openDir === 'SHORT' && config.trendFilterBlockShort) {
             if (last.ema7! > last.ema25! && last.ema25! > last.ema99!) break;
         }
         
-        // 信号锁定
+        // 信号命中，记录环境
         nextPos.pendingSignal = openDir;
         nextPos.pendingSignalType = type;
         nextPos.pendingSignalSource = type;
@@ -122,15 +121,7 @@ export const evaluateStrategy = (
     case StrategyState.ENTRY_ARMED: {
       if (config.manualTakeover) { nextPos.state = StrategyState.IDLE; break; }
       
-      // 检查原交叉信号是否已经因为反向交叉失效
-      const { openDir, type } = scanSignals(config, last, prev);
-      if (openDir !== 'NONE' && type === nextPos.pendingSignalType && openDir !== nextPos.pendingSignal) {
-          nextPos.state = StrategyState.IDLE;
-          nextPos.pendingSignal = 'NONE';
-          break;
-      }
-
-      // 回归开仓判定 (穿越逻辑)
+      // 回归检查不受收盘限制，只要有 Tick 更新就检测
       if (last.ema7 && prev.ema7) {
         const currDiff = (last.ema7 - last.close) / last.ema7 * 100;
         const prevDiff = (prev.ema7 - prev.close) / prev.ema7 * 100;
@@ -144,8 +135,17 @@ export const evaluateStrategy = (
         }
         
         if (reached) {
-            executeOpen(actions, config, nextPos, nextStats, last, `回归触发(${nextPos.pendingSignalSource})`);
+            executeOpen(actions, config, nextPos, nextStats, last, `回归开仓(${nextPos.pendingSignalSource})`);
         }
+      }
+
+      // 如果当前 K 线关闭了，顺便检查一下原始信号是否因为趋势反转而失效
+      if (last.isClosed) {
+          const { openDir, type } = scanSignals(config, last, prev);
+          if (openDir !== 'NONE' && type === nextPos.pendingSignalType && openDir !== nextPos.pendingSignal) {
+              nextPos.state = StrategyState.IDLE;
+              nextPos.pendingSignal = 'NONE';
+          }
       }
       break;
     }
@@ -164,6 +164,7 @@ export const evaluateStrategy = (
       let reverseDir: 'LONG' | 'SHORT' | 'NONE' = 'NONE';
       let reverseType: SignalSourceType = 'NONE';
 
+      // 1. 追踪止盈 (实时监控)
       if (config.useTrailingStop) {
         const actPrice = isLong ? nextPos.entryPrice * (1 + config.trailActivation/100) : nextPos.entryPrice * (1 - config.trailActivation/100);
         if ((isLong && nextPos.highestPrice >= actPrice) || (!isLong && nextPos.lowestPrice <= actPrice)) {
@@ -172,6 +173,7 @@ export const evaluateStrategy = (
         }
       }
 
+      // 2. 分级止盈止损 (实时监控)
       if (!exitReason && config.useMultiTPSL) {
         for (let i = 0; i < config.tpLevels.length; i++) {
           if (config.tpLevels[i].active && !nextPos.tpLevelsHit[i] && pnlPct >= config.tpLevels[i].pct) {
@@ -189,24 +191,29 @@ export const evaluateStrategy = (
         }
       }
 
+      // 3. 固定止盈止损 (实时监控)
       if (!exitReason && (nextPos.state as any) !== StrategyState.EXIT_PENDING && config.useFixedTPSL) {
         if (pnlPct >= config.takeProfitPct) exitReason = '全仓固定止盈';
         else if (pnlPct <= -config.stopLossPct) exitReason = '全仓固定止损';
       }
 
+      // 4. 指标信号平仓 (受 triggerOnClose 约束)
       if (!exitReason && (nextPos.state as any) !== StrategyState.EXIT_PENDING) {
-        const { openDir, closeDir, type } = scanSignals(config, last, prev);
-        const isCloseSignal = (isLong && closeDir === 'LONG') || (!isLong && closeDir === 'SHORT');
-        
-        if (isCloseSignal) {
-          exitReason = `指标平仓(${type})`;
-          if (config.useReverse && !config.manualTakeover) {
-            if ((isLong && openDir === 'SHORT' && config.reverseLongToShort) || (!isLong && openDir === 'LONG' && config.reverseShortToLong)) {
-                reverseDir = openDir as any;
-                reverseType = type;
-                exitReason = `反手信号(${type})`;
+        const canCheckIndicatorExit = config.triggerOnClose ? last.isClosed : true;
+        if (canCheckIndicatorExit) {
+            const { openDir, closeDir, type } = scanSignals(config, last, prev);
+            const isCloseSignal = (isLong && closeDir === 'LONG') || (!isLong && closeDir === 'SHORT');
+            
+            if (isCloseSignal) {
+              exitReason = `指标平仓(${type})`;
+              if (config.useReverse && !config.manualTakeover) {
+                if ((isLong && openDir === 'SHORT' && config.reverseLongToShort) || (!isLong && openDir === 'LONG' && config.reverseShortToLong)) {
+                    reverseDir = openDir as any;
+                    reverseType = type;
+                    exitReason = `反手信号(${type})`;
+                }
+              }
             }
-          }
         }
       }
 
@@ -217,6 +224,7 @@ export const evaluateStrategy = (
     }
 
     case StrategyState.EXIT_PENDING: {
+      // 这里的逻辑通常发生在平仓后的下一个 Tick
       if (nextPos.pendingSignal !== 'NONE') {
         executeOpen(actions, config, nextPos, nextStats, last, `[反手开仓]${nextPos.pendingSignalSource}`);
       } else {
@@ -243,7 +251,7 @@ function executeOpen(actions: WebhookPayload[], config: StrategyConfig, nextPos:
     trade_amount: qty * last.close,
     timestamp: new Date().toISOString(),
     strategy_name: config.name,
-    tp_level: reason || `信号触发(${nextPos.pendingSignalSource})`,
+    tp_level: reason || `事件触发(${nextPos.pendingSignalSource})`,
     execution_price: last.close,
     execution_quantity: qty
   });
