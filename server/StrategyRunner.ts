@@ -34,10 +34,17 @@ export class StrategyRunner {
     private isRunning: boolean = false;
     private subscriptionId: number = 0;
     private isWarmupPhase: boolean = true; 
+    private validSymbols: string[] = [];
 
-    constructor(config: StrategyConfig, onUpdate: (id: string, runtime: StrategyRuntime) => void, onLog: (log: any) => void) {
+    constructor(
+        config: StrategyConfig, 
+        onUpdate: (id: string, runtime: StrategyRuntime) => void, 
+        onLog: (log: any) => void,
+        validSymbols: string[] = []
+    ) {
         this.onUpdate = onUpdate;
         this.onLog = onLog;
+        this.validSymbols = validSymbols;
         this.runtime = {
             config: config,
             candles: [],
@@ -47,12 +54,28 @@ export class StrategyRunner {
         };
     }
 
+    private isValid(symbol: string): boolean {
+        // 如果名单为空，说明还没获取到，默认放行一次（或者可以严格拦截）
+        if (this.validSymbols.length === 0) return symbol.length > 5; 
+        return this.validSymbols.includes(symbol);
+    }
+
     public async start() {
         if (this.isRunning) return;
+        
+        // 核对币种合法性
+        if (!this.isValid(this.runtime.config.symbol)) {
+            console.log(`[Runner] ${this.runtime.config.symbol} is not a valid symbol. Wait for correct name.`);
+            return;
+        }
+
         this.isRunning = true;
         this.isWarmupPhase = true;
         this.subscriptionId++;
         const currentSid = this.subscriptionId;
+        
+        console.log(`[Runner] Starting subscription for ${this.runtime.config.symbol} (${this.runtime.config.interval})`);
+        
         await dataEngine.subscribe(
             this.runtime.config.id,
             this.runtime.config.symbol,
@@ -66,17 +89,20 @@ export class StrategyRunner {
     }
 
     public stop() {
+        if (!this.isRunning) return;
         this.isRunning = false;
+        console.log(`[Runner] Stopping subscription for ${this.runtime.config.symbol}`);
         dataEngine.unsubscribe(this.runtime.config.id, this.runtime.config.symbol, this.runtime.config.interval, this.runtime.config.market);
     }
 
     public updateConfig(newConfig: StrategyConfig) {
-        // 记录启动时间
+        const symbolChanged = newConfig.symbol !== this.runtime.config.symbol;
+        const intervalChanged = newConfig.interval !== this.runtime.config.interval;
+
         if (newConfig.isActive && !this.runtime.config.isActive) {
             newConfig.activationTime = Date.now();
         }
 
-        // 处理手动接管
         if (newConfig.manualTakeover && !this.runtime.config.manualTakeover) {
             this.runtime.positionState = {
                 ...this.runtime.positionState,
@@ -88,11 +114,25 @@ export class StrategyRunner {
                 openTime: Date.now()
             };
         } else if (!newConfig.manualTakeover && this.runtime.config.manualTakeover) {
-            // 取消接管，重置状态
             this.runtime.positionState = { ...INITIAL_POS_STATE };
         }
 
-        this.runtime.config = newConfig;
+        // 核心修复逻辑：只有当新币种是合法的，才进行切换
+        if (symbolChanged || intervalChanged) {
+            this.stop(); 
+            this.runtime.candles = []; 
+            this.runtime.config = newConfig; 
+            
+            // 只有合法时才重新启动订阅
+            if (this.isValid(newConfig.symbol)) {
+                this.start(); 
+            } else {
+                console.log(`[Runner] New symbol ${newConfig.symbol} is invalid, pausing subscription.`);
+            }
+        } else {
+            this.runtime.config = newConfig;
+        }
+
         this.emitUpdate();
     }
 
@@ -141,9 +181,11 @@ export class StrategyRunner {
             position: type.toLowerCase(),
             symbol: this.runtime.config.symbol,
             quantity: qty.toFixed(8),
-            trade_amount: qty * price,
+            leverage: this.runtime.config.leverage, 
             timestamp: new Date().toISOString(),
+            tv_exchange: "BINANCE", 
             strategy_name: this.runtime.config.name,
+            trade_amount: qty * price,
             tp_level: '手动面板指令',
             execution_price: price,
             execution_quantity: qty

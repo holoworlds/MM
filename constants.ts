@@ -28,6 +28,7 @@ export const DEFAULT_CONFIG: StrategyConfig = {
   interval: '1m',
   
   tradeAmount: 0,
+  leverage: 5, // 默认杠杆5
 
   webhookUrl: 'http://43.167.199.156:80/webhookbinance',
   secret: '',

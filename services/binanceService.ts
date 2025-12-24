@@ -2,6 +2,23 @@
 import { Candle, IntervalType, SymbolType } from "../types";
 import { BINANCE_REST_BASE } from "../constants";
 
+/**
+ * 获取所有合法的 U 本位合约交易对
+ */
+export const fetchValidSymbols = async (): Promise<string[]> => {
+  try {
+    const response = await fetch(`${BINANCE_REST_BASE}/exchangeInfo`);
+    if (!response.ok) return [];
+    const data = await response.json();
+    return data.symbols
+      .filter((s: any) => s.contractType === 'PERPETUAL' && s.quoteAsset === 'USDT')
+      .map((s: any) => s.symbol);
+  } catch (error) {
+    console.error("[Binance] Failed to fetch exchange info:", error);
+    return [];
+  }
+};
+
 export const fetchHistoricalCandles = async (
   symbol: SymbolType, 
   interval: IntervalType, 
@@ -44,7 +61,6 @@ export const fetchHistoricalCandles = async (
         console.error(`[Binance] Max retries reached for ${symbol} historical data.`);
         return [];
       }
-      // Wait before retry
       await new Promise(res => setTimeout(res, 2000 * attempt));
     }
   }

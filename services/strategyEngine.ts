@@ -248,9 +248,11 @@ function executeOpen(actions: WebhookPayload[], config: StrategyConfig, nextPos:
     position: dir!.toLowerCase(),
     symbol: config.symbol,
     quantity: qty.toFixed(8),
-    trade_amount: qty * last.close,
+    leverage: config.leverage, // 用户要求
     timestamp: new Date().toISOString(),
+    tv_exchange: "BINANCE", // 默认
     strategy_name: config.name,
+    trade_amount: qty * last.close,
     tp_level: reason || `事件触发(${nextPos.pendingSignalSource})`,
     execution_price: last.close,
     execution_quantity: qty
@@ -280,9 +282,11 @@ function executePartialClose(actions: WebhookPayload[], config: StrategyConfig, 
     position: 'partial',
     symbol: config.symbol,
     quantity: qtyToClose.toFixed(8),
-    trade_amount: qtyToClose * last.close,
+    leverage: config.leverage, // 用户要求
     timestamp: new Date().toISOString(),
+    tv_exchange: "BINANCE", // 默认
     strategy_name: config.name,
+    trade_amount: qtyToClose * last.close,
     tp_level: reason,
     execution_price: last.close,
     execution_quantity: qtyToClose
@@ -303,9 +307,11 @@ function executeClose(actions: WebhookPayload[], config: StrategyConfig, nextPos
     position: 'flat',
     symbol: config.symbol,
     quantity: nextPos.remainingQuantity.toFixed(8),
-    trade_amount: nextPos.remainingQuantity * last.close,
+    leverage: config.leverage, // 用户要求
     timestamp: new Date().toISOString(),
+    tv_exchange: "BINANCE", // 默认
     strategy_name: config.name,
+    trade_amount: nextPos.remainingQuantity * last.close,
     tp_level: reason,
     execution_price: last.close,
     execution_quantity: nextPos.remainingQuantity

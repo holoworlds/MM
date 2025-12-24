@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { StrategyConfig, SystemConfig, StrategyRuntime } from '../types';
 import { CRYPTO_SYMBOLS, AVAILABLE_INTERVALS } from '../constants';
 
@@ -55,7 +55,7 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
   }
 
   return (
-    <div className="bg-white rounded-lg border border-slate-200 h-full flex shadow-sm overflow-hidden text-slate-800 font-sans text-[12px]">
+    <div className="bg-white rounded-lg border border-slate-200 h-full flex shadow-sm overflow-hidden text-slate-800 font-sans text-[13px]">
         
         {/* SIDEBAR */}
         <div className="w-10 bg-slate-100 border-r border-slate-200 flex flex-col items-center py-4 gap-4 flex-shrink-0">
@@ -115,26 +115,26 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
 
                     <div className="bg-white p-3 rounded-lg border border-slate-200 shadow-sm space-y-3">
                          <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-                             <span className="text-[12px] text-slate-600 font-bold uppercase tracking-tight">运行状态</span>
+                             <span className="text-[13px] text-slate-600 font-bold uppercase tracking-tight">运行状态</span>
                              <Toggle checked={activeConfig.isActive} onChange={(v: boolean) => handleChange('isActive', v)} size="sm" />
                          </div>
                          <div className="grid grid-cols-2 gap-4">
                             <div>
-                                <div className="text-[11px] text-slate-500 font-bold">当前持仓</div>
-                                <div className={`text-[13px] font-black ${positionStatus === 'LONG' ? 'text-emerald-600' : positionStatus === 'SHORT' ? 'text-rose-600' : 'text-slate-400'}`}>
+                                <div className="text-[12px] text-slate-500 font-bold">当前持仓</div>
+                                <div className={`text-[14px] font-black ${positionStatus === 'LONG' ? 'text-emerald-600' : positionStatus === 'SHORT' ? 'text-rose-600' : 'text-slate-400'}`}>
                                     {positionStatus === 'LONG' ? '多头持仓' : positionStatus === 'SHORT' ? '空头持仓' : '空仓 (Flat)'}
                                 </div>
                             </div>
                             <div className="text-right">
-                                <div className="text-[11px] text-slate-500 font-bold">当前报价</div>
-                                <div className="text-[13px] font-black text-slate-900 font-mono">${lastPrice.toFixed(2)}</div>
+                                <div className="text-[12px] text-slate-500 font-bold">当前报价</div>
+                                <div className="text-[14px] font-black text-slate-900 font-mono">${lastPrice.toFixed(2)}</div>
                             </div>
                          </div>
                     </div>
 
                     {/* BASIC CONFIG */}
                     <div className="bg-white p-3 rounded-lg border border-slate-200 shadow-sm space-y-3">
-                        <h3 className="text-[11px] font-bold text-slate-700 border-b border-slate-100 pb-1 uppercase tracking-wider">基础策略设置</h3>
+                        <h3 className="text-[12px] font-bold text-slate-700 border-b border-slate-100 pb-1 uppercase tracking-wider">基础策略设置</h3>
                         <Input label="策略显示名称" value={activeConfig.name} onChange={(v: string) => handleChange('name', v)} />
                         <div className="grid grid-cols-2 gap-2">
                             <EditableSelect 
@@ -145,7 +145,10 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
                             />
                             <Select label="周期 (Interval)" value={activeConfig.interval} options={AVAILABLE_INTERVALS} onChange={(v: string) => handleChange('interval', v)} />
                         </div>
-                        <Input label="单笔交易金额 (U)" type="number" value={activeConfig.tradeAmount} onChange={(v: string) => handleChange('tradeAmount', parseFloat(v))} />
+                        <div className="grid grid-cols-2 gap-2">
+                          <Input label="单笔交易金额 (U)" type="number" value={activeConfig.tradeAmount} onChange={(v: string) => handleChange('tradeAmount', parseFloat(v))} />
+                          <Input label="杠杆倍数 (Leverage)" type="number" min="1" value={activeConfig.leverage} onChange={(v: string) => handleChange('leverage', parseInt(v))} />
+                        </div>
                         <Input label="Webhook URL" value={activeConfig.webhookUrl} onChange={(v: string) => handleChange('webhookUrl', v)} />
                     </div>
                 </div>
@@ -157,7 +160,7 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
                     {/* MANUAL TAKEOVER PANEL */}
                     <div className="bg-orange-50 p-3 rounded-lg border border-orange-200 shadow-sm">
                         <div className="flex justify-between items-center mb-2 border-b border-orange-200 pb-2">
-                            <h3 className="text-[12px] font-bold text-orange-700 uppercase tracking-tighter">手动接管 (Takeover)</h3>
+                            <h3 className="text-[13px] font-bold text-orange-700 uppercase tracking-tighter">手动接管 (Takeover)</h3>
                             <Toggle checked={activeConfig.manualTakeover} onChange={(v: boolean) => handleChange('manualTakeover', v)} />
                         </div>
                         <div className="space-y-2 bg-white p-2 rounded border border-orange-100">
@@ -169,14 +172,14 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
 
                     {/* SIGNAL LOGIC ENGINE */}
                     <div className="bg-white p-3 rounded-lg border border-slate-200 shadow-sm">
-                        <h3 className="text-[11px] font-bold text-slate-700 mb-3 border-b border-slate-100 pb-2 uppercase tracking-wider">信号与指标引擎</h3>
+                        <h3 className="text-[12px] font-bold text-slate-700 mb-3 border-b border-slate-100 pb-2 uppercase tracking-wider">信号与指标引擎</h3>
                         <div className="space-y-4">
                             <div className="flex justify-between items-center bg-slate-50 p-2 rounded border border-slate-200">
-                                <span className="text-[11px] font-bold text-slate-600 uppercase">触发时机模式</span>
+                                <span className="text-[12px] font-bold text-slate-600 uppercase">触发时机模式</span>
                                 <div className="flex items-center gap-2">
-                                    <span className={`text-[11px] transition-all font-bold ${!activeConfig.triggerOnClose ? 'text-blue-600' : 'text-slate-300'}`}>实时 (Tick)</span>
+                                    <span className={`text-[12px] transition-all font-bold ${!activeConfig.triggerOnClose ? 'text-blue-600' : 'text-slate-300'}`}>实时 (Tick)</span>
                                     <Toggle checked={activeConfig.triggerOnClose} onChange={(v: boolean) => handleChange('triggerOnClose', v)} size="sm" />
-                                    <span className={`text-[11px] transition-all font-bold ${activeConfig.triggerOnClose ? 'text-blue-600' : 'text-slate-300'}`}>收盘 (Close)</span>
+                                    <span className={`text-[12px] transition-all font-bold ${activeConfig.triggerOnClose ? 'text-blue-600' : 'text-slate-300'}`}>收盘 (Close)</span>
                                 </div>
                             </div>
 
@@ -185,8 +188,8 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
                                 {activeConfig.usePriceReturnEMA7 && (
                                     <div className="pt-1 border-t border-teal-200">
                                         <Input label="回归触发阈值(正下负上) %" type="number" step="0.01" value={activeConfig.priceReturnBelowEma7Pct} onChange={(v: string) => handleChange('priceReturnBelowEma7Pct', parseFloat(v))} />
-                                        <div className="text-[9px] text-teal-600 italic leading-tight space-y-1 mt-1">
-                                          {/* 逻辑：点位瞬间穿过目标线时触发 (Cross-into) */}
+                                        <div className="text-[10px] text-teal-600 italic leading-tight space-y-1 mt-1">
+                                          {/* 备注：逻辑：点位瞬间穿过目标线时触发 (Cross-into) */}
                                           <p>• <b>正数</b> (如 0.5)：价格到均线下方0.5%”时触发</p>
                                           <p>• <b>负数</b> (如 -0.5)：价格到上方0.5%”时触发</p>
                                         </div>
@@ -196,12 +199,12 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
                             
                             {/* 趋势过滤模块 (负向拦截约束) */}
                             <div className="bg-emerald-50 p-2 rounded border border-emerald-100">
-                                <h4 className="text-[10px] font-bold text-emerald-700 uppercase mb-2 tracking-widest text-center">趋势过滤器 (负向硬性拦截)</h4>
+                                <h4 className="text-[11px] font-bold text-emerald-700 uppercase mb-2 tracking-widest text-center">趋势过滤器 (负向硬性拦截)</h4>
                                 <div className="grid grid-cols-2 gap-2">
                                     <Toggle label="禁止开多 (7<25<99)" checked={activeConfig.trendFilterBlockLong} onChange={(v: boolean) => handleChange('trendFilterBlockLong', v)} size="sm" />
                                     <Toggle label="禁止开空 (7>25>99)" checked={activeConfig.trendFilterBlockShort} onChange={(v: boolean) => handleChange('trendFilterBlockShort', v)} size="sm" />
                                 </div>
-                                {/* 系统检测到强单边趋势排列时，将强制拦截该方向的所有开仓行为 */}
+                                {/* 备注：系统检测到强单边趋势排列时，将强制拦截该方向的所有开仓行为 */}
                             </div>
 
                             <div className="bg-slate-50 p-2 rounded border border-slate-100">
@@ -234,7 +237,7 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
                                     <div key={cross} className="bg-slate-50 p-2 rounded border border-slate-100">
                                         <Toggle label={label} checked={activeConfig[useKey]} onChange={(v: boolean) => handleChange(useKey, v)} className="font-black text-blue-600 mb-1" />
                                         {activeConfig[useKey] && (
-                                            <div className="grid grid-cols-2 gap-1 border-t border-slate-200 pt-2 bg-white p-1 rounded mt-1 text-[11px]">
+                                            <div className="grid grid-cols-2 gap-1 border-t border-slate-200 pt-2 bg-white p-1 rounded mt-1 text-[12px]">
                                                 <Toggle label="开多" checked={activeConfig[`${propBase}Long` as keyof StrategyConfig]} onChange={(v: boolean) => handleChange(`${propBase}Long` as keyof StrategyConfig, v)} size="sm" />
                                                 <Toggle label="开空" checked={activeConfig[`${propBase}Short` as keyof StrategyConfig]} onChange={(v: boolean) => handleChange(`${propBase}Short` as keyof StrategyConfig, v)} size="sm" />
                                                 <Toggle label="平多" checked={activeConfig[`${propBase}ExitLong` as keyof StrategyConfig]} onChange={(v: boolean) => handleChange(`${propBase}ExitLong` as keyof StrategyConfig, v)} size="sm" />
@@ -249,8 +252,8 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
 
                     {/* RISK AND PROFIT MANAGEMENT */}
                     <div className="bg-white p-3 rounded-lg border border-slate-200 shadow-sm">
-                        <h3 className="text-[11px] font-bold text-slate-700 mb-3 border-b border-slate-100 pb-2 uppercase tracking-wider">退出与风险管理</h3>
-                        <div className="space-y-4 text-[11px]">
+                        <h3 className="text-[12px] font-bold text-slate-700 mb-3 border-b border-slate-100 pb-2 uppercase tracking-wider">退出与风险管理</h3>
+                        <div className="space-y-4 text-[12px]">
                             <div className="bg-slate-50 p-2 rounded border border-slate-100">
                                 <Toggle label="追踪止盈 (Trailing Stop)" checked={activeConfig.useTrailingStop} onChange={(v: boolean) => handleChange('useTrailingStop', v)} className="font-black mb-2 text-slate-800" />
                                 {activeConfig.useTrailingStop && (
@@ -277,27 +280,27 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
                                 {activeConfig.useMultiTPSL && (
                                     <div className="space-y-5 border-t border-slate-200 pt-2">
                                         <div>
-                                            <div className="text-[10px] font-bold text-emerald-600 mb-1 uppercase tracking-widest border-l-2 border-emerald-600 pl-1">分段止盈 (Take Profit)</div>
+                                            <div className="text-[11px] font-bold text-emerald-600 mb-1 uppercase tracking-widest border-l-2 border-emerald-600 pl-1">分段止盈 (Take Profit)</div>
                                             {activeConfig.tpLevels.map((tp, idx) => (
                                                 <div key={`tp-${idx}`} className="flex items-center gap-1 mb-1.5 bg-white p-1 rounded border border-slate-100 shadow-sm">
-                                                    <span className="w-4 text-[10px] text-slate-400 font-mono">#{idx+1}</span>
-                                                    <input type="number" step="0.1" value={tp.pct} onChange={(e) => handleArrayChange('tpLevels', idx, 'pct', parseFloat(e.target.value))} className="w-10 bg-transparent text-[11px] text-center border-b border-slate-200" />
-                                                    <span className="text-[9px] text-slate-400">%价</span>
-                                                    <input type="number" step="1" value={tp.qtyPct} onChange={(e) => handleArrayChange('tpLevels', idx, 'qtyPct', parseFloat(e.target.value))} className="w-10 bg-transparent text-[11px] text-center border-b border-slate-200" />
-                                                    <span className="text-[9px] text-slate-400">%仓</span>
+                                                    <span className="w-4 text-[11px] text-slate-400 font-mono">#{idx+1}</span>
+                                                    <input type="number" step="0.1" value={tp.pct} onChange={(e) => handleArrayChange('tpLevels', idx, 'pct', parseFloat(e.target.value))} className="w-10 bg-transparent text-[12px] text-center border-b border-slate-200" />
+                                                    <span className="text-[10px] text-slate-400">%价</span>
+                                                    <input type="number" step="1" value={tp.qtyPct} onChange={(e) => handleArrayChange('tpLevels', idx, 'qtyPct', parseFloat(e.target.value))} className="w-10 bg-transparent text-[12px] text-center border-b border-slate-200" />
+                                                    <span className="text-[10px] text-slate-400">%仓</span>
                                                     <Toggle checked={tp.active} onChange={(v: boolean) => handleArrayChange('tpLevels', idx, 'active', v)} size="sm" />
                                                 </div>
                                             ))}
                                         </div>
                                         <div className="pt-2 border-t border-slate-200">
-                                            <div className="text-[10px] font-bold text-rose-600 mb-1 uppercase tracking-widest border-l-2 border-rose-600 pl-1">分段止损 (Stop Loss)</div>
+                                            <div className="text-[11px] font-bold text-rose-600 mb-1 uppercase tracking-widest border-l-2 border-rose-600 pl-1">分段止损 (Stop Loss)</div>
                                             {activeConfig.slLevels.map((sl, idx) => (
                                                 <div key={`sl-${idx}`} className="flex items-center gap-1 mb-1.5 bg-white p-1 rounded border border-slate-100 shadow-sm">
-                                                    <span className="w-4 text-[10px] text-slate-400 font-mono">#{idx+1}</span>
-                                                    <input type="number" step="0.1" value={sl.pct} onChange={(e) => handleArrayChange('slLevels', idx, 'pct', parseFloat(e.target.value))} className="w-10 bg-transparent text-[11px] text-center border-b border-slate-200" />
-                                                    <span className="text-[9px] text-slate-400">%价</span>
-                                                    <input type="number" step="1" value={sl.qtyPct} onChange={(e) => handleArrayChange('slLevels', idx, 'qtyPct', parseFloat(e.target.value))} className="w-10 bg-transparent text-[11px] text-center border-b border-slate-200" />
-                                                    <span className="text-[9px] text-slate-400">%仓</span>
+                                                    <span className="w-4 text-[11px] text-slate-400 font-mono">#{idx+1}</span>
+                                                    <input type="number" step="0.1" value={sl.pct} onChange={(e) => handleArrayChange('slLevels', idx, 'pct', parseFloat(e.target.value))} className="w-10 bg-transparent text-[12px] text-center border-b border-slate-200" />
+                                                    <span className="text-[10px] text-slate-400">%价</span>
+                                                    <input type="number" step="1" value={sl.qtyPct} onChange={(e) => handleArrayChange('slLevels', idx, 'qtyPct', parseFloat(e.target.value))} className="w-10 bg-transparent text-[12px] text-center border-b border-slate-200" />
+                                                    <span className="text-[10px] text-slate-400">%仓</span>
                                                     <Toggle checked={sl.active} onChange={(v: boolean) => handleArrayChange('slLevels', idx, 'active', v)} size="sm" />
                                                 </div>
                                             ))}
@@ -330,36 +333,59 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
 
 const Input = ({ label, value, onChange, type = "text", ...props }: any) => (
   <div className="mb-1.5 text-left">
-    {label && <label className="block text-slate-500 text-[10px] mb-0.5 font-bold uppercase tracking-tight">{label}</label>}
-    <input type={type} value={value} onChange={(e) => onChange(e.target.value)} className="w-full bg-white border border-slate-300 rounded p-1 text-[11px] text-slate-900 focus:border-blue-500 outline-none shadow-sm font-medium" {...props} />
+    {label && <label className="block text-slate-500 text-[11px] mb-0.5 font-bold uppercase tracking-tight">{label}</label>}
+    <input type={type} value={value} onChange={(e) => onChange(e.target.value)} className="w-full bg-white border border-slate-300 rounded p-1 text-[12px] text-slate-900 focus:border-blue-500 outline-none shadow-sm font-medium" {...props} />
   </div>
 );
 
-// 带下拉建议的可输入币种选择器
+// 核心优化：带本地缓冲的币种选择器
 const EditableSelect = ({ label, value, options, onChange }: any) => {
     const listId = `list-${label.replace(/\s+/g, '-')}`;
+    const [tempValue, setTempValue] = useState(value);
+
+    // 当外部 activeConfig.symbol 改变时同步内部（如手动切换策略）
+    useEffect(() => {
+        setTempValue(value);
+    }, [value]);
+
+    const handleCommit = (val: string) => {
+        const finalVal = val.toUpperCase().trim();
+        if (finalVal !== value) {
+            onChange(finalVal);
+        }
+    };
+
+    const handleKeyDown = (e: React.KeyboardEvent) => {
+        if (e.key === 'Enter') {
+            handleCommit(tempValue);
+            (e.target as any).blur();
+        }
+    };
+
     return (
         <div className="mb-1.5 text-left relative">
-            <label className="block text-slate-500 text-[10px] mb-0.5 font-bold uppercase tracking-tight">{label}</label>
+            <label className="block text-slate-500 text-[11px] mb-0.5 font-bold uppercase tracking-tight">{label}</label>
             <input 
                 list={listId}
-                value={value} 
-                onChange={(e) => onChange(e.target.value.toUpperCase())}
+                value={tempValue} 
+                onChange={(e) => setTempValue(e.target.value)}
+                onBlur={() => handleCommit(tempValue)}
+                onKeyDown={handleKeyDown}
                 placeholder="输入或选择..."
-                className="w-full bg-white border border-slate-300 rounded p-1 text-[11px] text-slate-900 focus:border-blue-500 outline-none shadow-sm font-medium"
+                className="w-full bg-white border border-slate-300 rounded p-1 text-[12px] text-slate-900 focus:border-blue-500 outline-none shadow-sm font-medium"
             />
             <datalist id={listId}>
                 {options.map((o: string) => <option key={o} value={o} />)}
             </datalist>
-            <div className="absolute right-1 top-5 text-[10px] text-slate-300 pointer-events-none">▼</div>
+            <div className="absolute right-1 top-5 text-[11px] text-slate-300 pointer-events-none">▼</div>
         </div>
     );
 };
 
 const Select = ({ label, value, options, onChange }: any) => (
   <div className="mb-1.5 text-left">
-    <label className="block text-slate-500 text-[10px] mb-0.5 font-bold uppercase tracking-tight">{label}</label>
-    <select value={value} onChange={(e) => onChange(e.target.value)} className="w-full bg-white border border-slate-300 rounded p-1 text-[11px] text-slate-900 focus:border-blue-500 outline-none shadow-sm font-medium">
+    <label className="block text-slate-500 text-[11px] mb-0.5 font-bold uppercase tracking-tight">{label}</label>
+    <select value={value} onChange={(e) => onChange(e.target.value)} className="w-full bg-white border border-slate-300 rounded p-1 text-[12px] text-slate-900 focus:border-blue-500 outline-none shadow-sm font-medium">
       {options.map((o: any) => <option key={o} value={o}>{o}</option>)}
     </select>
   </div>
@@ -367,7 +393,7 @@ const Select = ({ label, value, options, onChange }: any) => (
 
 const Toggle = ({ label, checked, onChange, size = "md", className = "" }: any) => (
   <div className={`flex items-center justify-between gap-2 ${className}`}>
-    {label && <span className={`text-slate-600 font-bold uppercase tracking-tighter ${size === 'sm' ? 'text-[10px]' : 'text-[11px]'}`}>{label}</span>}
+    {label && <span className={`text-slate-600 font-bold uppercase tracking-tighter ${size === 'sm' ? 'text-[11px]' : 'text-[12px]'}`}>{label}</span>}
     <button onClick={() => onChange(!checked)} className={`relative inline-flex items-center rounded-full transition-all ${checked ? 'bg-blue-600' : 'bg-slate-300'} ${size === 'sm' ? 'h-3.5 w-7' : 'h-5 w-10'} shadow-inner`}>
       <span className={`inline-block transform rounded-full bg-white transition-transform shadow-md ${size === 'sm' ? 'h-2.5 w-2.5' : 'h-4 w-4'} ${checked ? (size === 'sm' ? 'translate-x-3.5' : 'translate-x-5.5') : 'translate-x-0.5'}`} />
     </button>

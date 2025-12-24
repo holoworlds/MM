@@ -45,11 +45,11 @@ export interface WebhookPayload {
   position: string;
   symbol: string;
   quantity: string; 
+  leverage: number;
+  timestamp: string;
+  tv_exchange: string;
+  strategy_name: string;
   trade_amount?: number; 
-  leverage?: number;
-  timestamp?: string;
-  tv_exchange?: string;
-  strategy_name?: string;
   tp_level?: string;
   execution_price?: number;
   execution_quantity?: number;
@@ -74,6 +74,7 @@ export interface StrategyConfig {
   symbol: SymbolType;
   interval: IntervalType;
   tradeAmount: number;
+  leverage: number; // 用户新增需求
   webhookUrl: string;
   secret: string;
   triggerOnClose: boolean;

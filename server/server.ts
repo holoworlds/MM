@@ -8,6 +8,7 @@ import { DEFAULT_CONFIG, PRELOAD_SYMBOLS } from '../constants';
 import { StrategyConfig, StrategyRuntime, SystemConfig } from '../types';
 import { FileStore } from './FileStore';
 import { dataEngine } from './DataEngine';
+import { fetchValidSymbols } from '../services/binanceService';
 
 const app = express();
 app.use(cors() as any);
@@ -28,12 +29,12 @@ const PORT = 3001;
 // --- Server State ---
 const strategies: Record<string, StrategyRunner> = {};
 let logs: any[] = [];
-let systemConfig: SystemConfig = {};
+let validSymbols: string[] = [];
 
 function saveSystemState() {
     try {
-        const validStrategies = Object.values(strategies).filter(s => s && typeof s.getSnapshot === 'function');
-        const strategySnapshots = validStrategies.map(s => s.getSnapshot());
+        const validStrats = Object.values(strategies).filter(s => s && typeof s.getSnapshot === 'function');
+        const strategySnapshots = validStrats.map(s => s.getSnapshot());
         if (strategySnapshots.length > 0) {
             FileStore.save('strategies', strategySnapshots);
         }
@@ -45,6 +46,11 @@ function saveSystemState() {
 
 async function initializeSystem() {
     console.log('[System] Initializing...');
+    
+    // 获取合法交易对名单
+    validSymbols = await fetchValidSymbols();
+    console.log(`[System] Loaded ${validSymbols.length} valid symbols from Binance.`);
+
     for (const symbol of PRELOAD_SYMBOLS) {
         dataEngine.ensureActive(symbol).catch(err => console.error(`[System] Pre-warm failed for ${symbol}`, err)); 
     }
@@ -59,7 +65,8 @@ async function initializeSystem() {
                 const runner = new StrategyRunner(
                     sanitizedConfig,
                     (id, runtime) => broadcastUpdate(id, runtime),
-                    (log) => { addLog(log); saveSystemState(); }
+                    (log) => { addLog(log); saveSystemState(); },
+                    validSymbols // 传入合法名单
                 );
                 if (snapshot.positionState && snapshot.tradeStats) runner.restoreState(snapshot.positionState, snapshot.tradeStats);
                 strategies[sanitizedConfig.id] = runner;
@@ -72,7 +79,8 @@ async function initializeSystem() {
         const defaultRunner = new StrategyRunner(
             DEFAULT_CONFIG, 
             (id, runtime) => broadcastUpdate(id, runtime),
-            (log) => { addLog(log); saveSystemState(); }
+            (log) => { addLog(log); saveSystemState(); },
+            validSymbols
         );
         strategies[DEFAULT_CONFIG.id] = defaultRunner;
         defaultRunner.start();
@@ -118,7 +126,8 @@ io.on('connection', (socket) => {
         const newRunner = new StrategyRunner(
             newConfig,
             (id, runtime) => broadcastUpdate(id, runtime),
-            (log) => { addLog(log); saveSystemState(); }
+            (log) => { addLog(log); saveSystemState(); },
+            validSymbols
         );
         strategies[newId] = newRunner;
         newRunner.start();
